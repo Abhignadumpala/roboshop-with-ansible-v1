@@ -93,7 +93,12 @@ aws iam create-role \
   --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
 ```
 
-**What it does:** creates the role and says **EC2 servers** are allowed to use it.
+**What it does:** creates an **empty role** (no permissions yet). The JSON is the **trust policy**: it says *who* may use the role.
+
+| JSON part | Means |
+|---|---|
+| `"Principal":{"Service":"ec2.amazonaws.com"}` | Only **EC2 servers** can use this role (not users, not Lambda) |
+| `"Action":"sts:AssumeRole"` | They may "put on" the role and get its temporary keys |
 
 ```bash
 aws iam attach-role-policy \
@@ -107,7 +112,22 @@ aws iam attach-role-policy \
   --policy-arn arn:aws:iam::aws:policy/AmazonRoute53FullAccess
 ```
 
-**What it does:** gives the role only what it needs: EC2 and Route 53. (Not `AdministratorAccess`: least privilege.)
+**What it does:** adds the **permissions**: *what* the role may do. Both are AWS-managed policies (AWS writes and updates them).
+
+| Policy | Allows | What `roboshop.yaml` uses it for |
+|---|---|---|
+| `AmazonEC2FullAccess` | Everything in EC2: create, start, stop and terminate servers, read security groups, tags, volumes (plus load balancers and auto scaling) | **Create** the 10 servers (`ec2_instance`), find them by Name tag, attach the 2 security groups, **terminate** them on delete |
+| `AmazonRoute53FullAccess` | Everything in Route 53: read hosted zones, create, change and delete DNS records | **Create** `mongodb.abhignadevops.store` … records and **delete** them on cleanup |
+
+**What the role can NOT do:** anything outside EC2 and Route 53: no S3 buckets, no IAM users or roles, no RDS, no billing. If the server tries, AWS answers `AccessDenied`.
+
+| Option | Access | Use when |
+|---|---|---|
+| `AdministratorAccess` | Everything in the account | ❌ Never on a server: if it's hacked, the whole account is open |
+| **EC2 + Route 53 full access** (ours) | Only the 2 services we need | ✅ Labs and learning |
+| Custom policy (only `ec2:RunInstances`, `route53:ChangeResourceRecordSets` …) | Only the exact actions | ✅ Real projects: **least privilege** |
+
+> **Least privilege** = give only the permissions the job needs, nothing more.
 
 ```bash
 aws iam create-instance-profile --instance-profile-name ansible-server-role
