@@ -150,29 +150,33 @@ aws iam add-role-to-instance-profile \
 
 ### Step 6: Add an SSH rule to the roboshop-common security group
 
-We are **not creating a new security group** here. We already created `roboshop-common` in the previous RoboShop lab, so we **use the same one** and just **add one inbound rule** to it.
+In my case, I already created the `roboshop-common` security group in my previous RoboShop lab, so I'm **reusing the same one** and only **adding an inbound rule** to it.
 
-**Why the rule?** Right now `roboshop-common` allows SSH only from our home IP. The Ansible server is inside AWS, so its SSH to the RoboShop servers would time out.
+**If you're doing this lab for the first time**, or you don't have `roboshop-common` yet, first create the security group (6a), then add the inbound rule (6b). If you already have it, skip to 6b.
 
-> **Don't have `roboshop-common` yet?** Create it first and allow SSH from your home IP, then add the rule below.
->
-> ```bash
-> aws ec2 create-security-group \
->   --group-name roboshop-common \
->   --description "SSH for all RoboShop servers"
-> ```
->
-> ```bash
-> aws ec2 authorize-security-group-ingress \
->   --group-name roboshop-common \
->   --protocol tcp \
->   --port 22 \
->   --cidr $(curl -s checkip.amazonaws.com)/32
-> ```
->
-> **What it does:** creates the security group, then allows SSH (port 22) from **your laptop's public IP only**.
+**Why do we need this rule?** `roboshop-common` allows SSH only from your home IP. The Ansible server runs inside AWS with a different IP, so without this rule it can't SSH to the RoboShop servers (the connection times out).
 
-**Add the inbound rule to the existing security group:**
+#### 6a: Create the security group (first time only)
+
+```bash
+aws ec2 create-security-group \
+  --group-name roboshop-common \
+  --description "SSH for all RoboShop servers"
+```
+
+**What it does:** creates an empty security group called `roboshop-common`.
+
+```bash
+aws ec2 authorize-security-group-ingress \
+  --group-name roboshop-common \
+  --protocol tcp \
+  --port 22 \
+  --cidr $(curl -s checkip.amazonaws.com)/32
+```
+
+**What it does:** allows SSH (port 22) from **your laptop's public IP only**, so you can log in to the servers.
+
+#### 6b: Add the inbound rule for the Ansible server
 
 ```bash
 aws ec2 authorize-security-group-ingress \
@@ -182,7 +186,7 @@ aws ec2 authorize-security-group-ingress \
   --source-group roboshop-common
 ```
 
-**What it does:** adds the rule **SSH, port 22, source `roboshop-common`**: any server in this group can SSH to any other server in it.
+**What it does:** adds the rule **SSH, port 22, source `roboshop-common`**. Any server in this group can now SSH to any other server in it. The Ansible server and all 10 RoboShop servers are in it.
 
 **Expected:** `"Return": true` ✅. (`InvalidPermission.Duplicate` means the rule is already there, which is fine.)
 
