@@ -116,17 +116,23 @@ RoboShop e-commerce app (10 servers) set up with Ansible playbooks.
 The Ansible server calls AWS to create EC2 servers and DNS records, so it needs permission. An **IAM role** gives it temporary keys automatically, so there are no access keys on disk.
 
 ```bash
-aws iam create-role --role-name ansible-server-role --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
+aws iam create-role \
+  --role-name ansible-server-role \
+  --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
 ```
 
 **What it does:** creates the role and says **EC2 servers** are allowed to use it.
 
 ```bash
-aws iam attach-role-policy --role-name ansible-server-role --policy-arn arn:aws:iam::aws:policy/AmazonEC2FullAccess
+aws iam attach-role-policy \
+  --role-name ansible-server-role \
+  --policy-arn arn:aws:iam::aws:policy/AmazonEC2FullAccess
 ```
 
 ```bash
-aws iam attach-role-policy --role-name ansible-server-role --policy-arn arn:aws:iam::aws:policy/AmazonRoute53FullAccess
+aws iam attach-role-policy \
+  --role-name ansible-server-role \
+  --policy-arn arn:aws:iam::aws:policy/AmazonRoute53FullAccess
 ```
 
 **What it does:** gives the role only what it needs: EC2 and Route 53. (Not `AdministratorAccess`: least privilege.)
@@ -136,7 +142,9 @@ aws iam create-instance-profile --instance-profile-name ansible-server-role
 ```
 
 ```bash
-aws iam add-role-to-instance-profile --instance-profile-name ansible-server-role --role-name ansible-server-role
+aws iam add-role-to-instance-profile \
+  --instance-profile-name ansible-server-role \
+  --role-name ansible-server-role
 ```
 
 **What it does:** an EC2 server can't use a role directly; it uses an **instance profile**, a box that holds the role.
@@ -146,7 +154,11 @@ aws iam add-role-to-instance-profile --instance-profile-name ansible-server-role
 `roboshop-common` allows SSH only from our home IP. The Ansible server is **inside AWS**, so it needs its own rule to reach the RoboShop servers.
 
 ```bash
-aws ec2 authorize-security-group-ingress --group-name roboshop-common --protocol tcp --port 22 --source-group roboshop-common
+aws ec2 authorize-security-group-ingress \
+  --group-name roboshop-common \
+  --protocol tcp \
+  --port 22 \
+  --source-group roboshop-common
 ```
 
 **What it does:** any server in `roboshop-common` can now SSH to any other server in `roboshop-common`. The Ansible server and all 10 RoboShop servers are in it.
@@ -156,17 +168,27 @@ aws ec2 authorize-security-group-ingress --group-name roboshop-common --protocol
 #### Step 3: Launch the Ansible server
 
 ```bash
-aws ec2 run-instances --image-id ami-0055977a6e828a4f4 --instance-type t3.micro --security-groups roboshop-common --iam-instance-profile Name=ansible-server-role --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=ansible-server}]'
+aws ec2 run-instances \
+  --image-id ami-0055977a6e828a4f4 \
+  --instance-type t3.micro \
+  --security-groups roboshop-common \
+  --iam-instance-profile Name=ansible-server-role \
+  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=ansible-server}]' \
+  --query 'Instances[0].InstanceId' --output text
 ```
 
 **What it does:** creates the RHEL 9 Ansible server with the role from Step 1 and the security group from Step 2.
+
+**Expected:** an instance ID like `i-0abc123def4567890` ✅.
 
 | Error | Fix |
 |---|---|
 | `Invalid IAM Instance Profile name` | A new profile takes a few seconds to be ready. Wait 10 seconds and run it again |
 
 ```bash
-aws ec2 describe-instances --filters "Name=tag:Name,Values=ansible-server" "Name=instance-state-name,Values=running" --query 'Reservations[].Instances[].PublicIpAddress' --output text
+aws ec2 describe-instances \
+  --filters "Name=tag:Name,Values=ansible-server" "Name=instance-state-name,Values=running" \
+  --query 'Reservations[].Instances[].PublicIpAddress' --output text
 ```
 
 **Expected:** the server's public IP ✅.
@@ -328,7 +350,15 @@ exit
 ```
 
 ```bash
-aws ec2 terminate-instances --instance-ids $(aws ec2 describe-instances --filters "Name=tag:Name,Values=ansible-server" "Name=instance-state-name,Values=running,stopped" --query 'Reservations[].Instances[].InstanceId' --output text)
+ID=$(aws ec2 describe-instances \
+  --filters "Name=tag:Name,Values=ansible-server" "Name=instance-state-name,Values=running,stopped" \
+  --query 'Reservations[].Instances[].InstanceId' --output text)
+```
+
+**What it does:** finds the Ansible server's instance ID and saves it in the variable `ID`.
+
+```bash
+aws ec2 terminate-instances --instance-ids $ID
 ```
 
 **Expected:** `"Name": "shutting-down"` ✅. The IAM role and the SG rule cost nothing, so we keep them for the next lab.
