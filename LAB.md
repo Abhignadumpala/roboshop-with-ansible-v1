@@ -71,7 +71,13 @@
 
 ### Step 1: Create an IAM role for the Ansible server
 
-The Ansible server calls AWS to create EC2 servers and DNS records, so it needs permission. An **IAM role** gives it temporary keys automatically, so there are no access keys on disk.
+We **attach an IAM role to the Ansible server so that it can create the RoboShop servers**. `roboshop.yaml` runs on the Ansible server and asks AWS to create 10 EC2 servers and their Route 53 records. AWS only does that if the caller has permission, and the IAM role is that permission: EC2 + Route 53, nothing else.
+
+The role also gives the server **temporary keys automatically** (they rotate every few hours), so there are no access keys on disk.
+
+```
+ Ansible server ──(IAM role: EC2 + Route 53 permission)──► AWS API ──► 10 EC2 servers + DNS records
+```
 
 **Why create the role before the server?** An IAM role is not inside any server. It's an **identity in your AWS account**, like a user, that exists on its own. We create it once, then **attach** it when we launch the server (Step 3, `--iam-instance-profile`), so the server has AWS access from the first second.
 
