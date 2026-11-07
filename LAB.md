@@ -7,28 +7,33 @@
 ## Table of Contents
 
 **Part 1: AWS setup (on your laptop)**
-- [Step 1: Create an IAM role for the Ansible server](#step-1-create-an-iam-role-for-the-ansible-server)
-- [Step 2: Add an SSH rule to the roboshop-common security group](#step-2-add-an-ssh-rule-to-the-roboshop-common-security-group)
-- [Step 3: Create the Ansible server (EC2)](#step-3-create-the-ansible-server-ec2)
+- [Step 1: Create the IAM role](#step-1-create-the-iam-role)
+- [Step 2: Attach the EC2 policy to the role](#step-2-attach-the-ec2-policy-to-the-role)
+- [Step 3: Attach the Route 53 policy to the role](#step-3-attach-the-route-53-policy-to-the-role)
+- [Step 4: Create an instance profile](#step-4-create-an-instance-profile)
+- [Step 5: Add the role to the instance profile](#step-5-add-the-role-to-the-instance-profile)
+- [Step 6: Add an SSH rule to the roboshop-common security group](#step-6-add-an-ssh-rule-to-the-roboshop-common-security-group)
+- [Step 7: Create the Ansible server (EC2)](#step-7-create-the-ansible-server-ec2)
+- [Step 8: Get the Ansible server's public IP](#step-8-get-the-ansible-servers-public-ip)
 
 **Part 2: Prepare the Ansible server**
-- [Step 4: Log in to the Ansible server](#step-4-log-in-to-the-ansible-server)
-- [Step 5: Install Ansible and the collections](#step-5-install-ansible-and-the-collections)
-- [Step 6: Install boto3 and check AWS access](#step-6-install-boto3-and-check-aws-access)
-- [Step 7: Get the code](#step-7-get-the-code)
-- [Step 8: Set your domain](#step-8-set-your-domain)
-- [Step 9: Set the SSH password](#step-9-set-the-ssh-password)
-- [Step 10: Create the log folder](#step-10-create-the-log-folder)
+- [Step 9: Log in to the Ansible server](#step-9-log-in-to-the-ansible-server)
+- [Step 10: Install Ansible and the collections](#step-10-install-ansible-and-the-collections)
+- [Step 11: Install boto3 and check AWS access](#step-11-install-boto3-and-check-aws-access)
+- [Step 12: Get the code](#step-12-get-the-code)
+- [Step 13: Set your domain](#step-13-set-your-domain)
+- [Step 14: Set the SSH password](#step-14-set-the-ssh-password)
+- [Step 15: Create the log folder](#step-15-create-the-log-folder)
 
 **Part 3: Run RoboShop**
-- [Step 11: Create the 10 servers and DNS records](#step-11-create-the-10-servers-and-dns-records)
-- [Step 12: Check Ansible can reach every server](#step-12-check-ansible-can-reach-every-server)
-- [Step 13: Run the playbooks in order](#step-13-run-the-playbooks-in-order)
-- [Step 14: Open the shop](#step-14-open-the-shop)
+- [Step 16: Create the 10 servers and DNS records](#step-16-create-the-10-servers-and-dns-records)
+- [Step 17: Check Ansible can reach every server](#step-17-check-ansible-can-reach-every-server)
+- [Step 18: Run the playbooks in order](#step-18-run-the-playbooks-in-order)
+- [Step 19: Open the shop](#step-19-open-the-shop)
 
 **Part 4: Clean up**
-- [Step 15: Delete the RoboShop servers and records](#step-15-delete-the-roboshop-servers-and-records-on-the-ansible-server)
-- [Step 16: Delete the Ansible server](#step-16-delete-the-ansible-server-on-your-laptop)
+- [Step 20: Delete the RoboShop servers and records (on the Ansible server)](#step-20-delete-the-roboshop-servers-and-records-on-the-ansible-server)
+- [Step 21: Delete the Ansible server (on your laptop)](#step-21-delete-the-ansible-server-on-your-laptop)
 
 **Wrap-up**
 - [Troubleshooting](#troubleshooting)
@@ -69,23 +74,15 @@
 
 ## Part 1: AWS setup (on your laptop)
 
-### Step 1: Create an IAM role for the Ansible server
-
-We **attach an IAM role to the Ansible server so that it can create the RoboShop servers**. `roboshop.yaml` runs on the Ansible server and asks AWS to create 10 EC2 servers and their Route 53 records. AWS only does that if the caller has permission, and the IAM role is that permission: EC2 + Route 53, nothing else.
-
-The role also gives the server **temporary keys automatically** (they rotate every few hours), so there are no access keys on disk.
+**Order:** first the IAM role (Steps 1–5), then the security group rule (Step 6), then the Ansible server (Step 7). The server gets the role and the rule the moment it is created.
 
 ```
- Ansible server ──(IAM role: EC2 + Route 53 permission)──► AWS API ──► 10 EC2 servers + DNS records
+ Step 1 role ─► Steps 2–3 policies ─► Steps 4–5 instance profile ─► Step 6 SSH rule ─► Step 7 Ansible server
 ```
 
-**Why create the role before the server?** An IAM role is not inside any server. It's an **identity in your AWS account**, like a user, that exists on its own. We create it once, then **attach** it when we launch the server (Step 3, `--iam-instance-profile`), so the server has AWS access from the first second.
+### Step 1: Create the IAM role
 
-```
- Step 1: IAM role (in the AWS account) ──attach at launch──► Step 3: Ansible server (EC2)
-```
-
-> 💡 You can also do it the other way: launch the server first, then attach the role later in **EC2 → select the server → Actions → Security → Modify IAM role**. Both work; creating the role first saves that extra step.
+The Ansible server needs permission to create EC2 servers and DNS records. An **IAM role** gives it that permission, with temporary keys and no access keys on disk.
 
 ```bash
 aws iam create-role \
@@ -93,17 +90,11 @@ aws iam create-role \
   --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
 ```
 
-**What it does:** creates an **empty role** (no permissions yet). The JSON is the **trust policy**: it says *who* may use the role.
+**What it does:** creates an empty role called `ansible-server-role`. The JSON says **only EC2 servers** can use it.
 
-| JSON part | Means |
-|---|---|
-| `"Principal":{"Service":"ec2.amazonaws.com"}` | Only **EC2 servers** can use this role (not users, not Lambda) |
-| `"Action":"sts:AssumeRole"` | They may "put on" the role and get its temporary keys |
+**Expected:** JSON output with `"RoleName": "ansible-server-role"` ✅.
 
-Now we give the role **2 permissions**:
-
-1. **`AmazonEC2FullAccess`**: so the Ansible server can **create and delete EC2 servers**
-2. **`AmazonRoute53FullAccess`**: so the Ansible server can **create and delete DNS records**
+### Step 2: Attach the EC2 policy to the role
 
 ```bash
 aws iam attach-role-policy \
@@ -111,17 +102,41 @@ aws iam attach-role-policy \
   --policy-arn arn:aws:iam::aws:policy/AmazonEC2FullAccess
 ```
 
+**What it does:** gives the role **`AmazonEC2FullAccess`**, so the Ansible server can **create and delete EC2 servers**.
+
+**Expected:** no output ✅.
+
+### Step 3: Attach the Route 53 policy to the role
+
 ```bash
 aws iam attach-role-policy \
   --role-name ansible-server-role \
   --policy-arn arn:aws:iam::aws:policy/AmazonRoute53FullAccess
 ```
 
-**What it does:** attaches the 2 permissions to the role. Now the role can create and delete EC2 servers and DNS records.
+**What it does:** gives the role **`AmazonRoute53FullAccess`**, so the Ansible server can **create and delete DNS records**.
+
+**Expected:** no output ✅.
+
+### Step 4: Create an instance profile
+
+An EC2 server can't take a role directly. It takes an **instance profile**: a container that holds the role.
+
+```
+ IAM role  ──put inside──►  instance profile  ──attach──►  EC2 server
+```
 
 ```bash
 aws iam create-instance-profile --instance-profile-name ansible-server-role
 ```
+
+**What it does:** creates an empty instance profile called `ansible-server-role`.
+
+**Expected:** JSON output with `"InstanceProfileName": "ansible-server-role"` ✅.
+
+> 💡 In the AWS console this is done for you when you create a role for EC2. With the CLI we do it ourselves.
+
+### Step 5: Add the role to the instance profile
 
 ```bash
 aws iam add-role-to-instance-profile \
@@ -129,17 +144,13 @@ aws iam add-role-to-instance-profile \
   --role-name ansible-server-role
 ```
 
-**What it does:** an EC2 server can't use a role directly; it uses an **instance profile**, a box that holds the role.
+**What it does:** puts our role inside the instance profile. Now it's ready to attach to a server.
 
-### Step 2: Add an SSH rule to the roboshop-common security group
+**Expected:** no output ✅.
 
-We **don't create a new security group** here. `roboshop-common` already exists, and every RoboShop server and the Ansible server use it. Right now it allows SSH (port 22) **only from our home IP**. The Ansible server is **inside AWS** with a different IP, so its SSH to the RoboShop servers would time out. We add **one inbound rule** to fix that.
+### Step 6: Add an SSH rule to the roboshop-common security group
 
-| Inbound rule | Value |
-|---|---|
-| Type | SSH |
-| Port | 22 |
-| Source | `roboshop-common` itself (any server in this group) |
+We **don't create a new security group** here. `roboshop-common` already exists, and every RoboShop server and the Ansible server use it. Right now it allows SSH only from our home IP, so the Ansible server (inside AWS) can't SSH to the RoboShop servers. We add **one inbound rule**.
 
 ```bash
 aws ec2 authorize-security-group-ingress \
@@ -149,11 +160,11 @@ aws ec2 authorize-security-group-ingress \
   --source-group roboshop-common
 ```
 
-**What it does:** any server in `roboshop-common` can now SSH to any other server in `roboshop-common`. The Ansible server and all 10 RoboShop servers are in it.
+**What it does:** adds the rule **SSH, port 22, source `roboshop-common`**: any server in this group can SSH to any other server in it.
 
 **Expected:** `"Return": true` ✅. (`InvalidPermission.Duplicate` means the rule is already there, which is fine.)
 
-### Step 3: Create the Ansible server (EC2)
+### Step 7: Create the Ansible server (EC2)
 
 ```bash
 aws ec2 run-instances \
@@ -165,7 +176,7 @@ aws ec2 run-instances \
   --query 'Instances[0].InstanceId' --output text
 ```
 
-**What it does:** creates the RHEL 9 Ansible server with the role from Step 1 and the security group from Step 2.
+**What it does:** creates the RHEL 9 Ansible server with the instance profile (Step 5) and the security group (Step 6).
 
 **Expected:** an instance ID like `i-0abc123def4567890` ✅.
 
@@ -173,19 +184,23 @@ aws ec2 run-instances \
 |---|---|
 | `Invalid IAM Instance Profile name` | A new profile takes a few seconds to be ready. Wait 10 seconds and run it again |
 
+### Step 8: Get the Ansible server's public IP
+
 ```bash
 aws ec2 describe-instances \
   --filters "Name=tag:Name,Values=ansible-server" "Name=instance-state-name,Values=running" \
   --query 'Reservations[].Instances[].PublicIpAddress' --output text
 ```
 
-**Expected:** the server's public IP ✅.
+**What it does:** prints the public IP we use to log in.
+
+**Expected:** an IP like `54.xx.xx.xx` ✅.
 
 ---
 
 ## Part 2: Prepare the Ansible server
 
-### Step 4: Log in to the Ansible server
+### Step 9: Log in to the Ansible server
 
 ```bash
 ssh ec2-user@<ansible-server-public-ip>
@@ -193,7 +208,7 @@ ssh ec2-user@<ansible-server-public-ip>
 
 Type `yes` the first time, then the SSH password (nothing shows while you type).
 
-### Step 5: Install Ansible and the collections
+### Step 10: Install Ansible and the collections
 
 ```bash
 sudo dnf install ansible-core git -y
@@ -205,7 +220,7 @@ ansible-galaxy collection install amazon.aws community.general community.rabbitm
 
 **What it does:** `ansible-core` has only the built-in modules. The **collections** add the ones we need: `amazon.aws` (EC2, Route 53), `community.general` (npm) and `community.rabbitmq` (RabbitMQ user).
 
-### Step 6: Install boto3 and check AWS access
+### Step 11: Install boto3 and check AWS access
 
 ```bash
 sudo pip3.9 install botocore boto3
@@ -219,7 +234,7 @@ aws sts get-caller-identity
 
 **Expected:** `Arn` shows `assumed-role/ansible-server-role/…` ✅. The server has AWS access with no keys.
 
-### Step 7: Get the code
+### Step 12: Get the code
 
 ```bash
 git clone https://github.com/Abhignadumpala/roboshop-with-ansible-v1.git
@@ -231,7 +246,7 @@ cd roboshop-with-ansible-v1
 
 **What it does:** downloads the playbooks, templates and `group_vars/` to the Ansible server. We run every `ansible-playbook` command from inside this folder, so Ansible finds `ansible.cfg` and the inventory.
 
-### Step 8: Set your domain
+### Step 13: Set your domain
 
 The server names in the inventory, `group_vars/all.yaml` and `roboshop.yaml` use the domain `abhignadevops.store`. If your hosted zone is different, change all of them in one go:
 
@@ -245,7 +260,7 @@ grep -rn "domain_name\|_host" roboshop.yaml group_vars/all.yaml
 
 **Expected:** every name ends with your domain ✅.
 
-### Step 9: Set the SSH password
+### Step 14: Set the SSH password
 
 ```bash
 vim group_vars/all.yaml
@@ -255,7 +270,7 @@ Set `ansible_password:` to the SSH password of the RoboShop servers (`ansible_us
 
 > ⚠️ Never push the real password to GitHub. Keep `<ssh-password>` in the repo and fill it in only on the server.
 
-### Step 10: Create the log folder
+### Step 15: Create the log folder
 
 ```bash
 mkdir -p ~/roboshop-logs
@@ -267,7 +282,7 @@ mkdir -p ~/roboshop-logs
 
 ## Part 3: Run RoboShop
 
-### Step 11: Create the 10 servers and DNS records
+### Step 16: Create the 10 servers and DNS records
 
 ```bash
 ansible-playbook roboshop.yaml
@@ -275,7 +290,7 @@ ansible-playbook roboshop.yaml
 
 **Expected:** 10 servers `roboshop-mongodb` … `roboshop-frontend` in the EC2 console, and a Route 53 record for each one ✅.
 
-### Step 12: Check Ansible can reach every server
+### Step 17: Check Ansible can reach every server
 
 ```bash
 ansible all -m ping
@@ -285,11 +300,11 @@ ansible all -m ping
 
 | Error | Cause | Fix |
 |---|---|---|
-| `UNREACHABLE … timed out` | No SSH rule from the Ansible server | Step 2 |
+| `UNREACHABLE … timed out` | No SSH rule from the Ansible server | Step 6 |
 | `UNREACHABLE … Permission denied` | Wrong password | Fix `group_vars/all.yaml` |
 | `Could not resolve hostname` | Records not created yet | Run `roboshop.yaml` again |
 
-### Step 13: Run the playbooks in order
+### Step 18: Run the playbooks in order
 
 ```bash
 ansible-playbook 01-mongodb.yaml
@@ -339,7 +354,7 @@ ansible-playbook 10-frontend.yaml
 
 **Expected:** every play ends with `failed=0` ✅. Re-running a playbook is safe (idempotent).
 
-### Step 14: Open the shop
+### Step 19: Open the shop
 
 Open `http://abhignadevops.store` in the browser.
 
@@ -349,7 +364,7 @@ Open `http://abhignadevops.store` in the browser.
 
 ## Part 4: Clean up
 
-### Step 15: Delete the RoboShop servers and records (on the Ansible server)
+### Step 20: Delete the RoboShop servers and records (on the Ansible server)
 
 ```bash
 ansible-playbook roboshop.yaml -e "action=delete"
@@ -357,7 +372,7 @@ ansible-playbook roboshop.yaml -e "action=delete"
 
 **Expected:** all 10 servers terminating and their records gone ✅.
 
-### Step 16: Delete the Ansible server (on your laptop)
+### Step 21: Delete the Ansible server (on your laptop)
 
 ```bash
 exit
@@ -383,14 +398,14 @@ aws ec2 terminate-instances --instance-ids $ID
 
 | Error | Cause | Fix |
 |---|---|---|
-| `Invalid IAM Instance Profile name` | Profile not ready yet | Wait 10 seconds, run Step 3 again |
+| `Invalid IAM Instance Profile name` | Profile not ready yet | Wait 10 seconds, run Step 7 again |
 | `Unable to locate credentials` | No IAM role on the Ansible server | Attach `ansible-server-role` (EC2 → Actions → Security → Modify IAM role) |
 | `Failed to import the required Python library (botocore and boto3)` | boto3 installed for a different Python | `sudo pip3.9 install botocore boto3` |
-| `couldn't resolve module/action 'amazon.aws.ec2_instance'` | Collection not installed | Step 5 |
+| `couldn't resolve module/action 'amazon.aws.ec2_instance'` | Collection not installed | Step 10 |
 | `Invalid callback for stdout specified: yaml` | New `community.general` versions removed the `yaml` output | Delete the `stdout_callback=yaml` line in `ansible.cfg` |
 | `InvalidGroup.NotFound` | A `roboshop-<name>` security group is missing | Create it in the same region (`us-east-1`) |
-| `UNREACHABLE … timed out` | No SSH rule from the Ansible server | Step 2 |
-| `UNREACHABLE … Permission denied` | Wrong SSH password | Step 9 |
+| `UNREACHABLE … timed out` | No SSH rule from the Ansible server | Step 6 |
+| `UNREACHABLE … Permission denied` | Wrong SSH password | Step 14 |
 | Website shows `502 Bad Gateway` | A backend service is down | `ansible <name> -b -m command -a "systemctl status <name>"` |
 
 ---
