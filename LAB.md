@@ -150,7 +150,29 @@ aws iam add-role-to-instance-profile \
 
 ### Step 6: Add an SSH rule to the roboshop-common security group
 
-We **don't create a new security group** here. `roboshop-common` already exists, and every RoboShop server and the Ansible server use it. Right now it allows SSH only from our home IP, so the Ansible server (inside AWS) can't SSH to the RoboShop servers. We add **one inbound rule**.
+We are **not creating a new security group** here. We already created `roboshop-common` in the previous RoboShop lab, so we **use the same one** and just **add one inbound rule** to it.
+
+**Why the rule?** Right now `roboshop-common` allows SSH only from our home IP. The Ansible server is inside AWS, so its SSH to the RoboShop servers would time out.
+
+> **Don't have `roboshop-common` yet?** Create it first and allow SSH from your home IP, then add the rule below.
+>
+> ```bash
+> aws ec2 create-security-group \
+>   --group-name roboshop-common \
+>   --description "SSH for all RoboShop servers"
+> ```
+>
+> ```bash
+> aws ec2 authorize-security-group-ingress \
+>   --group-name roboshop-common \
+>   --protocol tcp \
+>   --port 22 \
+>   --cidr $(curl -s checkip.amazonaws.com)/32
+> ```
+>
+> **What it does:** creates the security group, then allows SSH (port 22) from **your laptop's public IP only**.
+
+**Add the inbound rule to the existing security group:**
 
 ```bash
 aws ec2 authorize-security-group-ingress \
