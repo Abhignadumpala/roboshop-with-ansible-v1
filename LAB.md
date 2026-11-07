@@ -8,11 +8,11 @@
 
 **Part 1: AWS setup (on your laptop)**
 - [Step 1: Create an IAM role for the Ansible server](#step-1-create-an-iam-role-for-the-ansible-server)
-- [Step 2: Let the servers SSH to each other](#step-2-let-the-servers-ssh-to-each-other)
-- [Step 3: Launch the Ansible server](#step-3-launch-the-ansible-server)
+- [Step 2: Add an SSH rule to the roboshop-common security group](#step-2-add-an-ssh-rule-to-the-roboshop-common-security-group)
+- [Step 3: Create the Ansible server (EC2)](#step-3-create-the-ansible-server-ec2)
 
 **Part 2: Prepare the Ansible server**
-- [Step 4: Log in](#step-4-log-in)
+- [Step 4: Log in to the Ansible server](#step-4-log-in-to-the-ansible-server)
 - [Step 5: Install Ansible and the collections](#step-5-install-ansible-and-the-collections)
 - [Step 6: Install boto3 and check AWS access](#step-6-install-boto3-and-check-aws-access)
 - [Step 7: Get the code](#step-7-get-the-code)
@@ -146,9 +146,15 @@ aws iam add-role-to-instance-profile \
 
 **What it does:** an EC2 server can't use a role directly; it uses an **instance profile**, a box that holds the role.
 
-### Step 2: Let the servers SSH to each other
+### Step 2: Add an SSH rule to the roboshop-common security group
 
-`roboshop-common` allows SSH only from our home IP. The Ansible server is **inside AWS**, so it needs its own rule to reach the RoboShop servers.
+We **don't create a new security group** here. `roboshop-common` already exists, and every RoboShop server and the Ansible server use it. Right now it allows SSH (port 22) **only from our home IP**. The Ansible server is **inside AWS** with a different IP, so its SSH to the RoboShop servers would time out. We add **one inbound rule** to fix that.
+
+| Inbound rule | Value |
+|---|---|
+| Type | SSH |
+| Port | 22 |
+| Source | `roboshop-common` itself (any server in this group) |
 
 ```bash
 aws ec2 authorize-security-group-ingress \
@@ -162,7 +168,7 @@ aws ec2 authorize-security-group-ingress \
 
 **Expected:** `"Return": true` ✅. (`InvalidPermission.Duplicate` means the rule is already there, which is fine.)
 
-### Step 3: Launch the Ansible server
+### Step 3: Create the Ansible server (EC2)
 
 ```bash
 aws ec2 run-instances \
@@ -194,7 +200,7 @@ aws ec2 describe-instances \
 
 ## Part 2: Prepare the Ansible server
 
-### Step 4: Log in
+### Step 4: Log in to the Ansible server
 
 ```bash
 ssh ec2-user@<ansible-server-public-ip>
