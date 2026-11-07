@@ -100,6 +100,11 @@ aws iam create-role \
 | `"Principal":{"Service":"ec2.amazonaws.com"}` | Only **EC2 servers** can use this role (not users, not Lambda) |
 | `"Action":"sts:AssumeRole"` | They may "put on" the role and get its temporary keys |
 
+Now we give the role **2 permissions**:
+
+1. **`AmazonEC2FullAccess`**: so the Ansible server can **create and delete EC2 servers**
+2. **`AmazonRoute53FullAccess`**: so the Ansible server can **create and delete DNS records**
+
 ```bash
 aws iam attach-role-policy \
   --role-name ansible-server-role \
