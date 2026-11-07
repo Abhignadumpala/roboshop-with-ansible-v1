@@ -117,22 +117,7 @@ aws iam attach-role-policy \
   --policy-arn arn:aws:iam::aws:policy/AmazonRoute53FullAccess
 ```
 
-**What it does:** adds the **permissions**: *what* the role may do. Both are AWS-managed policies (AWS writes and updates them).
-
-| Policy | Allows | What `roboshop.yaml` uses it for |
-|---|---|---|
-| `AmazonEC2FullAccess` | Everything in EC2: create, start, stop and terminate servers, read security groups, tags, volumes (plus load balancers and auto scaling) | **Create** the 10 servers (`ec2_instance`), find them by Name tag, attach the 2 security groups, **terminate** them on delete |
-| `AmazonRoute53FullAccess` | Everything in Route 53: read hosted zones, create, change and delete DNS records | **Create** `mongodb.abhignadevops.store` … records and **delete** them on cleanup |
-
-**What the role can NOT do:** anything outside EC2 and Route 53: no S3 buckets, no IAM users or roles, no RDS, no billing. If the server tries, AWS answers `AccessDenied`.
-
-| Option | Access | Use when |
-|---|---|---|
-| `AdministratorAccess` | Everything in the account | ❌ Never on a server: if it's hacked, the whole account is open |
-| **EC2 + Route 53 full access** (ours) | Only the 2 services we need | ✅ Labs and learning |
-| Custom policy (only `ec2:RunInstances`, `route53:ChangeResourceRecordSets` …) | Only the exact actions | ✅ Real projects: **least privilege** |
-
-> **Least privilege** = give only the permissions the job needs, nothing more.
+**What it does:** attaches the 2 permissions to the role. Now the role can create and delete EC2 servers and DNS records.
 
 ```bash
 aws iam create-instance-profile --instance-profile-name ansible-server-role
