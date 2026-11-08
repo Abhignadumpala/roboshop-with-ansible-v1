@@ -35,6 +35,7 @@
 - [Step 22: Push the setup files](#step-22-push-the-setup-files)
 
 **Part 4: Build RoboShop one server at a time**
+- [Create the 4 database servers at once](#create-the-4-database-servers-at-once)
 - [Server 1: MongoDB](#server-1-mongodb)
 - [Server 2: Redis](#server-2-redis)
 - [Server 3: MySQL](#server-3-mysql)
@@ -708,10 +709,11 @@ git push
 
 ## Part 4: Build RoboShop one server at a time
 
-For **every** server we repeat the same loop, all on the Ansible server:
+First we create the **4 database servers at once**, then configure them one by one. The backend and frontend servers are created **one at a time**, each right before we configure it.
 
 ```
- write the code ─► create the server ─► ping ─► run the playbook ─► check ─► push
+ Databases:  create all 4 at once ─► for each: write the code ─► ping ─► run the playbook ─► check ─► push
+ Apps:       for each: write the code ─► create the server ─► ping ─► run the playbook ─► check ─► push
 ```
 
 | Order | Server | Why this order |
@@ -720,7 +722,29 @@ For **every** server we repeat the same loop, all on the Ansible server:
 | 5–9 | catalogue, user, cart, shipping, payment | Backend services |
 | 10 | frontend | Last: it forwards requests to all the backend services |
 
-> 💡 While building, `ansible all -m ping` shows the servers that don't exist yet as `UNREACHABLE`. That's expected. Ping only the group you just created.
+> 💡 While building, `ansible all -m ping` shows the servers that don't exist yet as `UNREACHABLE`. That's expected. Ping only the group you are working on.
+
+### Create the 4 database servers at once
+
+```bash
+ansible-playbook roboshop.yaml -e "instances=['mongodb','redis','mysql','rabbitmq']"
+```
+
+**What it does:** `-e` replaces the list of 10 with the 4 databases, so only `roboshop-mongodb`, `roboshop-redis`, `roboshop-mysql` and `roboshop-rabbitmq` are created, each with its Route 53 record.
+
+**Expected:** `create ec2 instance` and `create R53 record` show `changed` 4 times ✅. EC2 console: 4 servers.
+
+```bash
+nslookup mongodb.abhignadevops.store
+```
+
+**Expected:** mongodb's **private IP** (e.g. `172.31.x.x`) ✅.
+
+```bash
+ansible mongodb,redis,mysql,rabbitmq -m ping
+```
+
+**Expected:** `"ping": "pong"` from all 4 ✅. (Just created? Wait a minute for them to boot, then try again.)
 
 ### Server 1: MongoDB
 
@@ -791,15 +815,9 @@ vim 01-mongodb.yaml
 | `allow remote connections` | Changes `127.0.0.1` to `0.0.0.0` in `/etc/mongod.conf`, so other servers can connect |
 | `restart mongod` | Restarts so the new config is used |
 
-#### 1b. Create the mongodb server and DNS record
+> The mongodb server was already created with the other databases ([Create the 4 database servers at once](#create-the-4-database-servers-at-once)).
 
-```bash
-ansible-playbook roboshop.yaml -e "instances=['mongodb']"
-```
-
-**Expected:** `roboshop-mongodb` in the EC2 console and the record `mongodb.abhignadevops.store` ✅.
-
-#### 1c. Check Ansible can reach it
+#### 1b. Check Ansible can reach it
 
 ```bash
 ansible mongodb -m ping
@@ -807,7 +825,7 @@ ansible mongodb -m ping
 
 **Expected:** `"ping": "pong"` ✅. (Just created? Wait a minute for the server to boot, then try again.)
 
-#### 1d. Configure it
+#### 1c. Configure it
 
 ```bash
 ansible-playbook 01-mongodb.yaml
@@ -815,7 +833,7 @@ ansible-playbook 01-mongodb.yaml
 
 **Expected:** the recap shows `failed=0` ✅.
 
-#### 1e. Check the service is running
+#### 1d. Check the service is running
 
 ```bash
 ansible mongodb -b -m command -a "systemctl is-active mongod"
@@ -823,7 +841,7 @@ ansible mongodb -b -m command -a "systemctl is-active mongod"
 
 **Expected:** `active` ✅. If not: `ansible mongodb -b -m command -a "journalctl -u mongod -n 20"` shows why.
 
-#### 1f. Push the working code
+#### 1e. Push the working code
 
 ```bash
 git add mongo.repo 01-mongodb.yaml
@@ -887,15 +905,9 @@ vim 02-redis.yaml
 | `disable protected mode` | Lets other servers connect without a password |
 | `enable and start redis` | Restarts with the new config and starts on boot |
 
-#### 2b. Create the redis server and DNS record
+> The redis server was already created with the other databases ([Create the 4 database servers at once](#create-the-4-database-servers-at-once)).
 
-```bash
-ansible-playbook roboshop.yaml -e "instances=['redis']"
-```
-
-**Expected:** `roboshop-redis` in the EC2 console and the record `redis.abhignadevops.store` ✅.
-
-#### 2c. Check Ansible can reach it
+#### 2b. Check Ansible can reach it
 
 ```bash
 ansible redis -m ping
@@ -903,7 +915,7 @@ ansible redis -m ping
 
 **Expected:** `"ping": "pong"` ✅. (Just created? Wait a minute for the server to boot, then try again.)
 
-#### 2d. Configure it
+#### 2c. Configure it
 
 ```bash
 ansible-playbook 02-redis.yaml
@@ -911,7 +923,7 @@ ansible-playbook 02-redis.yaml
 
 **Expected:** the recap shows `failed=0` ✅.
 
-#### 2e. Check the service is running
+#### 2d. Check the service is running
 
 ```bash
 ansible redis -b -m command -a "systemctl is-active redis"
@@ -919,7 +931,7 @@ ansible redis -b -m command -a "systemctl is-active redis"
 
 **Expected:** `active` ✅. If not: `ansible redis -b -m command -a "journalctl -u redis -n 20"` shows why.
 
-#### 2f. Push the working code
+#### 2e. Push the working code
 
 ```bash
 git add 02-redis.yaml
@@ -981,15 +993,9 @@ vim 03-mysql.yaml
 | `enable and start mysql` | Starts it now and on boot |
 | `setup mysql root password` | Sets the root password from `group_vars/mysql.yaml` |
 
-#### 3b. Create the mysql server and DNS record
+> The mysql server was already created with the other databases ([Create the 4 database servers at once](#create-the-4-database-servers-at-once)).
 
-```bash
-ansible-playbook roboshop.yaml -e "instances=['mysql']"
-```
-
-**Expected:** `roboshop-mysql` in the EC2 console and the record `mysql.abhignadevops.store` ✅.
-
-#### 3c. Check Ansible can reach it
+#### 3b. Check Ansible can reach it
 
 ```bash
 ansible mysql -m ping
@@ -997,7 +1003,7 @@ ansible mysql -m ping
 
 **Expected:** `"ping": "pong"` ✅. (Just created? Wait a minute for the server to boot, then try again.)
 
-#### 3d. Configure it
+#### 3c. Configure it
 
 ```bash
 ansible-playbook 03-mysql.yaml
@@ -1005,7 +1011,7 @@ ansible-playbook 03-mysql.yaml
 
 **Expected:** the recap shows `failed=0` ✅.
 
-#### 3e. Check the service is running
+#### 3d. Check the service is running
 
 ```bash
 ansible mysql -b -m command -a "systemctl is-active mysqld"
@@ -1013,7 +1019,7 @@ ansible mysql -b -m command -a "systemctl is-active mysqld"
 
 **Expected:** `active` ✅. If not: `ansible mysql -b -m command -a "journalctl -u mysqld -n 20"` shows why.
 
-#### 3f. Push the working code
+#### 3e. Push the working code
 
 ```bash
 git add 03-mysql.yaml
@@ -1149,15 +1155,9 @@ vim 04-rabbitmq.yaml
 | `start and enable rabbitmq server` | Starts it now and on boot |
 | `create rabbitmq user` | Creates the `roboshop` user that payment uses |
 
-#### 4b. Create the rabbitmq server and DNS record
+> The rabbitmq server was already created with the other databases ([Create the 4 database servers at once](#create-the-4-database-servers-at-once)).
 
-```bash
-ansible-playbook roboshop.yaml -e "instances=['rabbitmq']"
-```
-
-**Expected:** `roboshop-rabbitmq` in the EC2 console and the record `rabbitmq.abhignadevops.store` ✅.
-
-#### 4c. Check Ansible can reach it
+#### 4b. Check Ansible can reach it
 
 ```bash
 ansible rabbitmq -m ping
@@ -1165,7 +1165,7 @@ ansible rabbitmq -m ping
 
 **Expected:** `"ping": "pong"` ✅. (Just created? Wait a minute for the server to boot, then try again.)
 
-#### 4d. Configure it
+#### 4c. Configure it
 
 ```bash
 ansible-playbook 04-rabbitmq.yaml
@@ -1173,7 +1173,7 @@ ansible-playbook 04-rabbitmq.yaml
 
 **Expected:** the recap shows `failed=0` ✅.
 
-#### 4e. Check the service is running
+#### 4d. Check the service is running
 
 ```bash
 ansible rabbitmq -b -m command -a "systemctl is-active rabbitmq-server"
@@ -1181,7 +1181,7 @@ ansible rabbitmq -b -m command -a "systemctl is-active rabbitmq-server"
 
 **Expected:** `active` ✅. If not: `ansible rabbitmq -b -m command -a "journalctl -u rabbitmq-server -n 20"` shows why.
 
-#### 4f. Push the working code
+#### 4e. Push the working code
 
 ```bash
 git add rabbitmq.repo 04-rabbitmq.yaml
