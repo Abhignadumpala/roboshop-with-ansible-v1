@@ -31,11 +31,14 @@
 - [Step 18: Create group_vars/all.yaml](#step-18-create-group_varsallyaml)
 - [Step 19: Encrypt the SSH password with Ansible Vault](#step-19-encrypt-the-ssh-password-with-ansible-vault)
 - [Step 20: Create the group-specific variable files](#step-20-create-the-group-specific-variable-files)
-- [Step 21: Create roboshop.yaml](#step-21-create-roboshopyaml)
-- [Step 22: Push the setup files](#step-22-push-the-setup-files)
+- [Step 21: Push the setup files](#step-21-push-the-setup-files)
 
 **Part 4: Build RoboShop one server at a time**
-- [Create the 4 database servers at once](#create-the-4-database-servers-at-once)
+- [Step 22: Write roboshop.yaml: create the 4 database servers](#step-22-write-roboshopyaml-create-the-4-database-servers)
+- [Step 23: Create the 4 database servers](#step-23-create-the-4-database-servers)
+- [Step 24: Add the Route 53 records (and delete tasks) to roboshop.yaml](#step-24-add-the-route-53-records-and-delete-tasks-to-roboshopyaml)
+- [Step 25: Run it again: the records are created](#step-25-run-it-again-the-records-are-created)
+- [Step 26: Push roboshop.yaml](#step-26-push-roboshopyaml)
 - [Server 1: MongoDB](#server-1-mongodb)
 - [Server 2: Redis](#server-2-redis)
 - [Server 3: MySQL](#server-3-mysql)
@@ -48,11 +51,11 @@
 - [Server 10: Frontend](#server-10-frontend)
 
 **Part 5: Open the shop**
-- [Step 23: Open the website](#step-23-open-the-website)
+- [Step 27: Open the website](#step-27-open-the-website)
 
 **Part 6: Clean up**
-- [Step 24: Delete the RoboShop servers and records (Ansible server)](#step-24-delete-the-roboshop-servers-and-records-ansible-server)
-- [Step 25: Delete the Ansible server (laptop)](#step-25-delete-the-ansible-server-laptop)
+- [Step 28: Delete the RoboShop servers and records (Ansible server)](#step-28-delete-the-roboshop-servers-and-records-ansible-server)
+- [Step 29: Delete the Ansible server (laptop)](#step-29-delete-the-ansible-server-laptop)
 
 **Wrap-up**
 - [Troubleshooting](#troubleshooting)
@@ -77,8 +80,8 @@
 |---|---|---|
 | **Part 1: AWS setup** | Laptop | IAM role, security group rule, Ansible server |
 | **Part 2: Prepare the Ansible server** | Ansible server | Install Ansible + boto3 + sshpass, clone the repo, set up git push |
-| **Part 3: Project setup files** | Ansible server | `ansible.cfg`, inventory, `group_vars/`, Vault password, `roboshop.yaml` → push |
-| **Part 4: Build RoboShop one server at a time** | Ansible server | For each of the 10 servers: write code → create → configure → check → push |
+| **Part 3: Project setup files** | Ansible server | `ansible.cfg`, inventory, `group_vars/`, Vault password → push |
+| **Part 4: Build RoboShop one server at a time** | Ansible server | `roboshop.yaml` creates the 4 databases, then each server: write code → configure → check → push |
 | **Part 5: Open the shop** | Browser | Test the website |
 | **Part 6: Clean up** | Ansible server + laptop | Delete everything |
 
@@ -342,7 +345,7 @@ These files are used by every playbook. We write them once and push them.
  │   ├── cart.yaml        ← variables only for cart
  │   ├── mongodb.yaml
  │   └── mysql.yaml
- ├── roboshop.yaml        ← creates/deletes servers + DNS records
+ ├── roboshop.yaml        ← creates/deletes servers + DNS records (Part 4)
  ├── 01-mongodb.yaml … 10-frontend.yaml   ← Part 4, one by one
  └── *.repo, *.j2         ← files the playbooks copy to the servers
 ```
@@ -584,7 +587,103 @@ ansible-inventory --host cart.abhignadevops.store
 
 **Expected:** the `all.yaml` variables **plus** `"app_version": "v4"` ✅. Only cart has it.
 
-### Step 21: Create roboshop.yaml
+### Step 21: Push the setup files
+
+```bash
+git status
+```
+
+**Expected:** `ansible.cfg`, `inventory.ini` and `group_vars/` as new files. No `.vault_pass` (it's in the home folder, outside the repo) ✅.
+
+```bash
+git add ansible.cfg inventory.ini group_vars
+```
+
+```bash
+git commit -m "Add project setup files"
+```
+
+```bash
+git push
+```
+
+**Expected:** the files are on GitHub, and `group_vars/all.yaml` shows only the encrypted `$ANSIBLE_VAULT` text ✅.
+
+---
+
+## Part 4: Build RoboShop one server at a time
+
+First we create the **4 database servers at once**, then configure them one by one. The backend and frontend servers are created **one at a time**, each right before we configure it.
+
+```
+ Databases:  create all 4 at once ─► for each: write the code ─► ping ─► run the playbook ─► check ─► push
+ Apps:       for each: write the code ─► create the server ─► ping ─► run the playbook ─► check ─► push
+```
+
+| Order | Server | Why this order |
+|---|---|---|
+| 1–4 | mongodb, redis, mysql, rabbitmq | Databases first: the apps connect to them and load data into them |
+| 5–9 | catalogue, user, cart, shipping, payment | Backend services |
+| 10 | frontend | Last: it forwards requests to all the backend services |
+
+> 💡 While building, `ansible all -m ping` shows the servers that don't exist yet as `UNREACHABLE`. That's expected. Ping only the group you are working on.
+
+### Step 22: Write roboshop.yaml: create the 4 database servers
+
+We start `roboshop.yaml` small: only the task that **creates the EC2 servers**, with the **4 databases** as the default list.
+
+```bash
+vim roboshop.yaml
+```
+
+```yaml
+- name: create ec2 instances and r53 records
+  hosts: local
+  connection: local
+  vars:
+    instances: ["mongodb", "redis", "mysql", "rabbitmq"]
+    action: create
+    domain_name: abhignadevops.store
+    ami_id: ami-0055977a6e828a4f4
+  tasks:
+  - name: create ec2 instance
+    amazon.aws.ec2_instance:
+      name: "roboshop-{{ item }}"
+      image_id: "{{ ami_id }}"
+      instance_type: t3.micro
+      security_groups:
+      - roboshop-common
+      - "roboshop-{{ item }}"
+      region: us-east-1
+    loop: "{{ instances }}"
+    when: action == "create"
+```
+
+| Part | What it does |
+|---|---|
+| `hosts: local` + `connection: local` | Runs on the Ansible server itself: it talks to the **AWS API**, not over SSH |
+| `vars:` | `instances` = the 4 databases, `action: create`, our domain and the AMI |
+| `amazon.aws.ec2_instance` | Creates `roboshop-<name>` with 2 security groups: `roboshop-common` + `roboshop-<name>` |
+| `loop: "{{ instances }}"` | Runs the task once per name: `roboshop-mongodb`, `roboshop-redis`… |
+| `when: action == "create"` | Runs only when `action` is `create` (later we add delete tasks to the same file) |
+
+### Step 23: Create the 4 database servers
+
+```bash
+ansible-playbook roboshop.yaml
+```
+
+**Expected:** `create ec2 instance` shows `changed` 4 times ✅. EC2 console: `roboshop-mongodb`, `roboshop-redis`, `roboshop-mysql`, `roboshop-rabbitmq`.
+
+```bash
+ansible-playbook roboshop.yaml
+```
+
+**Expected:** this time `ok` 4 times, **no new servers**: `ec2_instance` finds them by their Name tag (**idempotent**) ✅.
+
+### Step 24: Add the Route 53 records (and delete tasks) to roboshop.yaml
+
+The inventory uses names like `mongodb.abhignadevops.store`, so every server needs a **DNS record**. We add `register: ec2_output` to the create task (it saves each server's details, including its IP) and the record tasks after it. We also add the delete tasks now, so the same file can clean up.
 
 ```bash
 vim roboshop.yaml
@@ -597,7 +696,7 @@ vim roboshop.yaml
   vars:
     # ansible-playbook roboshop.yaml -e "instances=['mongodb', 'redis']"
     # ansible-playbook roboshop.yaml -e "action=delete"
-    instances: ["mongodb", "redis", "mysql", "rabbitmq", "catalogue", "user", "cart", "shipping", "payment", "frontend"]
+    instances: ["mongodb", "redis", "mysql", "rabbitmq"]
     action: create
     domain_name: abhignadevops.store
     ami_id: ami-0055977a6e828a4f4
@@ -672,67 +771,20 @@ vim roboshop.yaml
     when: action == "delete"
 ```
 
-| Part | What it does |
+| New part | What it does |
 |---|---|
-| `hosts: local` + `connection: local` | Runs on the Ansible server itself: it talks to the AWS API, not over SSH |
-| `vars:` | Defaults: all 10 servers, `action: create`, our domain, the AMI |
-| `create ec2 instance` | Creates `roboshop-<name>` with 2 security groups: `roboshop-common` + `roboshop-<name>` |
-| `create R53 record` | `<name>.abhignadevops.store` → that server's **private IP** |
-| `create R53 record for frontend` | `abhignadevops.store` → frontend's **public IP** |
+| `register: ec2_output` | Saves the output of the create task: for each server its **private and public IP** |
+| `create R53 record` | `<name>.abhignadevops.store` → that server's **private IP** (`item.instances[0].private_ip_address`) |
+| `create R53 record for frontend` | `abhignadevops.store` → frontend's **public IP** (skipped until frontend exists) |
 | `delete …` tasks | Run only with `-e "action=delete"` |
 
-> 💡 `-e "instances=['mongodb']"` replaces the list of 10 with one server. That's how we create the servers **one at a time** in Part 4.
-
-### Step 22: Push the setup files
+### Step 25: Run it again: the records are created
 
 ```bash
-git status
+ansible-playbook roboshop.yaml
 ```
 
-**Expected:** `ansible.cfg`, `inventory.ini`, `group_vars/` and `roboshop.yaml` as new files. No `.vault_pass` (it's in the home folder, outside the repo) ✅.
-
-```bash
-git add ansible.cfg inventory.ini group_vars roboshop.yaml
-```
-
-```bash
-git commit -m "Add project setup files"
-```
-
-```bash
-git push
-```
-
-**Expected:** the files are on GitHub, and `group_vars/all.yaml` shows only the encrypted `$ANSIBLE_VAULT` text ✅.
-
----
-
-## Part 4: Build RoboShop one server at a time
-
-First we create the **4 database servers at once**, then configure them one by one. The backend and frontend servers are created **one at a time**, each right before we configure it.
-
-```
- Databases:  create all 4 at once ─► for each: write the code ─► ping ─► run the playbook ─► check ─► push
- Apps:       for each: write the code ─► create the server ─► ping ─► run the playbook ─► check ─► push
-```
-
-| Order | Server | Why this order |
-|---|---|---|
-| 1–4 | mongodb, redis, mysql, rabbitmq | Databases first: the apps connect to them and load data into them |
-| 5–9 | catalogue, user, cart, shipping, payment | Backend services |
-| 10 | frontend | Last: it forwards requests to all the backend services |
-
-> 💡 While building, `ansible all -m ping` shows the servers that don't exist yet as `UNREACHABLE`. That's expected. Ping only the group you are working on.
-
-### Create the 4 database servers at once
-
-```bash
-ansible-playbook roboshop.yaml -e "instances=['mongodb','redis','mysql','rabbitmq']"
-```
-
-**What it does:** `-e` replaces the list of 10 with the 4 databases, so only `roboshop-mongodb`, `roboshop-redis`, `roboshop-mysql` and `roboshop-rabbitmq` are created, each with its Route 53 record.
-
-**Expected:** `create ec2 instance` and `create R53 record` show `changed` 4 times ✅. EC2 console: 4 servers.
+**Expected:** `create ec2 instance` → `ok` 4 times (servers already exist), `create R53 record` → `changed` 4 times ✅.
 
 ```bash
 nslookup mongodb.abhignadevops.store
@@ -744,7 +796,23 @@ nslookup mongodb.abhignadevops.store
 ansible mongodb,redis,mysql,rabbitmq -m ping
 ```
 
-**Expected:** `"ping": "pong"` from all 4 ✅. (Just created? Wait a minute for them to boot, then try again.)
+**Expected:** `"ping": "pong"` from all 4 ✅. (Just created? Wait a minute for them to boot.)
+
+### Step 26: Push roboshop.yaml
+
+```bash
+git add roboshop.yaml
+```
+
+```bash
+git commit -m "Add roboshop.yaml: create servers and DNS records"
+```
+
+```bash
+git push
+```
+
+> 💡 The default list has only the 4 databases. For the app servers we pass the name with `-e`, e.g. `-e "instances=['catalogue']"`: `-e` overrides `vars:`.
 
 ### Server 1: MongoDB
 
@@ -815,7 +883,7 @@ vim 01-mongodb.yaml
 | `allow remote connections` | Changes `127.0.0.1` to `0.0.0.0` in `/etc/mongod.conf`, so other servers can connect |
 | `restart mongod` | Restarts so the new config is used |
 
-> The mongodb server was already created with the other databases ([Create the 4 database servers at once](#create-the-4-database-servers-at-once)).
+> The mongodb server was already created with the other databases (Step 23).
 
 #### 1b. Check Ansible can reach it
 
@@ -905,7 +973,7 @@ vim 02-redis.yaml
 | `disable protected mode` | Lets other servers connect without a password |
 | `enable and start redis` | Restarts with the new config and starts on boot |
 
-> The redis server was already created with the other databases ([Create the 4 database servers at once](#create-the-4-database-servers-at-once)).
+> The redis server was already created with the other databases (Step 23).
 
 #### 2b. Check Ansible can reach it
 
@@ -993,7 +1061,7 @@ vim 03-mysql.yaml
 | `enable and start mysql` | Starts it now and on boot |
 | `setup mysql root password` | Sets the root password from `group_vars/mysql.yaml` |
 
-> The mysql server was already created with the other databases ([Create the 4 database servers at once](#create-the-4-database-servers-at-once)).
+> The mysql server was already created with the other databases (Step 23).
 
 #### 3b. Check Ansible can reach it
 
@@ -1155,7 +1223,7 @@ vim 04-rabbitmq.yaml
 | `start and enable rabbitmq server` | Starts it now and on boot |
 | `create rabbitmq user` | Creates the `roboshop` user that payment uses |
 
-> The rabbitmq server was already created with the other databases ([Create the 4 database servers at once](#create-the-4-database-servers-at-once)).
+> The rabbitmq server was already created with the other databases (Step 23).
 
 #### 4b. Check Ansible can reach it
 
@@ -2284,7 +2352,7 @@ git push
 
 ## Part 5: Open the shop
 
-### Step 23: Open the website
+### Step 27: Open the website
 
 Open `http://abhignadevops.store` in the browser.
 
@@ -2300,17 +2368,19 @@ Open `http://abhignadevops.store` in the browser.
 
 ## Part 6: Clean up
 
-### Step 24: Delete the RoboShop servers and records (Ansible server)
+### Step 28: Delete the RoboShop servers and records (Ansible server)
 
 ```bash
-ansible-playbook roboshop.yaml -e "action=delete"
+ansible-playbook roboshop.yaml -e "action=delete instances=['mongodb','redis','mysql','rabbitmq','catalogue','user','cart','shipping','payment','frontend']"
 ```
+
+**What it does:** the default list has only the 4 databases, so we pass all 10 names.
 
 **Expected:** all 10 servers terminating and their records gone ✅.
 
 > ⚠️ Deleting one server (`-e "action=delete instances=['mongodb']"`) also deletes the `abhignadevops.store` record. Run `-e "instances=['frontend']"` again to bring it back.
 
-### Step 25: Delete the Ansible server (laptop)
+### Step 29: Delete the Ansible server (laptop)
 
 ```bash
 exit
