@@ -1,0 +1,16 @@
+ansible_user: ec2-user
+ansible_password: <ssh-password>
+mongodb_host: mongodb.abhignadevops.store
+redis_host: redis.abhignadevops.store
+mysql_host: mysql.abhignadevops.store
+rabbitmq_host: rabbitmq.abhignadevops.store
+catalogue_host: catalogue.abhignadevops.store
+user_host: user.abhignadevops.store
+cart_host: cart.abhignadevops.store
+shipping_host: shipping.abhignadevops.store
+payment_host: payment.abhignadevops.store
+mysql_root_password: RoboShop@1
+shipping_db_user: shipping
+shipping_db_password: RoboShop@1
+rabbitmq_user: roboshop
+rabbitmq_password: roboshop123
