@@ -250,6 +250,8 @@ aws ec2 describe-instances \
 
 ## Part 2: Prepare the Ansible server
 
+📍 **Where:** Step 9 runs on your **laptop** (it logs you in). Steps 10–15 run on the **Ansible server**: 10–13 in the home folder (`~`), 14–15 anywhere.
+
 ### Step 9: Log in to the Ansible server
 
 ```bash
@@ -350,9 +352,29 @@ These files are used by every playbook. We write them once and push them.
  └── *.repo, *.j2         ← files the playbooks copy to the servers
 ```
 
+**Where do we run these commands?** Everything in Part 3 runs on the **Ansible server** (logged in with `ssh` from Step 9). Most commands run inside the **repo folder**; two things live in the **home folder**, outside the repo, so git never pushes them:
+
+```
+ /home/ec2-user/                     ← home folder (~)
+ ├── .vault_pass                     ← Step 19: vault password (secret, never pushed)
+ ├── roboshop-logs/                  ← Step 15: Ansible log (never pushed)
+ └── roboshop-with-ansible-v1/       ← repo folder: everything here goes to GitHub
+     ├── ansible.cfg
+     ├── inventory.ini
+     └── group_vars/ …
+```
+
+Each step starts with a 📍 **Where:** line. Always come back to the repo folder before running repo commands:
+
+```bash
+cd ~/roboshop-with-ansible-v1
+```
+
 > 💡 **vim basics:** `i` to start typing, `Esc` to stop, `:wq` + Enter to save and quit. Before pasting, type `:set paste` + Enter so vim doesn't add extra spaces.
 
 ### Step 16: Create ansible.cfg
+
+📍 **Where:** Ansible server, inside the repo folder `~/roboshop-with-ansible-v1`.
 
 ```bash
 vim ansible.cfg
@@ -380,6 +402,8 @@ ansible --version
 **Expected:** `config file = /home/ec2-user/roboshop-with-ansible-v1/ansible.cfg` ✅.
 
 ### Step 17: Create inventory.ini
+
+📍 **Where:** Ansible server, inside the repo folder `~/roboshop-with-ansible-v1`.
 
 ```bash
 vim inventory.ini
@@ -430,6 +454,8 @@ ansible-inventory --graph
 
 ### Step 18: Create group_vars/all.yaml
 
+📍 **Where:** Ansible server, inside the repo folder `~/roboshop-with-ansible-v1`.
+
 ```bash
 mkdir group_vars
 ```
@@ -478,6 +504,8 @@ rabbitmq_password: roboshop123
 
 **1. Create the vault password file (outside the repo):**
 
+📍 **Where:** Ansible server, **home folder**. The `~/` in the command puts the file in `/home/ec2-user/`, wherever you are. It's a hidden file (starts with `.`), so `ls` doesn't show it; use `ls -la ~`.
+
 ```bash
 echo '<choose-a-vault-password>' > ~/.vault_pass
 ```
@@ -486,9 +514,13 @@ echo '<choose-a-vault-password>' > ~/.vault_pass
 chmod 600 ~/.vault_pass
 ```
 
+Replace `<choose-a-vault-password>` (including the `< >`) with a password you choose, e.g. `echo 'MyVault@123' > ~/.vault_pass`. Don't write your real password in notes or git.
+
 **What it does:** saves the key that locks/unlocks the vault in our home folder. `chmod 600` = only we can read it. `ansible.cfg` already points to it (Step 16).
 
 **2. Encrypt the SSH password:**
+
+📍 **Where:** Ansible server, inside the repo folder `~/roboshop-with-ansible-v1` (so Ansible reads `ansible.cfg` and finds `~/.vault_pass`).
 
 ```bash
 ansible-vault encrypt_string '<ssh-password>' --name 'ansible_password'
@@ -509,6 +541,8 @@ ansible_password: !vault |
 Copy the whole block.
 
 **3. Put it in all.yaml:**
+
+📍 **Where:** Ansible server, inside the repo folder `~/roboshop-with-ansible-v1`.
 
 ```bash
 vim group_vars/all.yaml
@@ -535,6 +569,8 @@ mongodb_host: mongodb.abhignadevops.store
 
 **4. Check Ansible can decrypt it:**
 
+📍 **Where:** Ansible server, inside the repo folder `~/roboshop-with-ansible-v1`.
+
 ```bash
 ansible mongodb -m debug -a "var=ansible_password"
 ```
@@ -550,6 +586,8 @@ ansible mongodb -m debug -a "var=ansible_password"
 > ⚠️ Lose `~/.vault_pass` (or delete the Ansible server) and the value can't be decrypted. Just repeat this step with a new vault password.
 
 ### Step 20: Create the group-specific variable files
+
+📍 **Where:** Ansible server, inside the repo folder `~/roboshop-with-ansible-v1`.
 
 ```bash
 vim group_vars/cart.yaml
@@ -589,6 +627,8 @@ ansible-inventory --host cart.abhignadevops.store
 
 ### Step 21: Push the setup files
 
+📍 **Where:** Ansible server, inside the repo folder `~/roboshop-with-ansible-v1`.
+
 ```bash
 git status
 ```
@@ -612,6 +652,8 @@ git push
 ---
 
 ## Part 4: Build RoboShop one server at a time
+
+📍 **Where:** every command in Part 4 runs on the **Ansible server**, inside the repo folder `~/roboshop-with-ansible-v1`.
 
 First we create the **4 database servers at once**, then configure them one by one. The backend and frontend servers are created **one at a time**, each right before we configure it.
 
