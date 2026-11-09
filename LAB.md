@@ -106,7 +106,11 @@
 
 ### Step 1: Create the IAM role
 
-The Ansible server needs permission to create EC2 servers and DNS records. An **IAM role** gives it that permission, with temporary keys and no access keys on disk.
+| | |
+|---|---|
+| **What is it** | An **IAM role** = a set of AWS permissions that a service (here: an EC2 server) can use |
+| **What we do** | Create an empty role `ansible-server-role` that only EC2 servers are allowed to use |
+| **Why** | The Ansible server must call AWS to create servers. A role gives it permissions without storing access keys on the server |
 
 ```bash
 aws iam create-role \
@@ -120,6 +124,12 @@ aws iam create-role \
 
 ### Step 2: Attach the EC2 policy to the role
 
+| | |
+|---|---|
+| **What is it** | A **policy** = the list of actions a role is allowed to do |
+| **What we do** | Attach `AmazonEC2FullAccess` to the role |
+| **Why** | So the Ansible server can **create and delete EC2 servers** |
+
 ```bash
 aws iam attach-role-policy \
   --role-name ansible-server-role \
@@ -132,6 +142,12 @@ aws iam attach-role-policy \
 
 ### Step 3: Attach the Route 53 policy to the role
 
+| | |
+|---|---|
+| **What is it** | **Route 53** = AWS DNS (names like `mongodb.abhignadevops.store`) |
+| **What we do** | Attach `AmazonRoute53FullAccess` to the role |
+| **Why** | So the Ansible server can **create and delete DNS records** for each server |
+
 ```bash
 aws iam attach-role-policy \
   --role-name ansible-server-role \
@@ -143,6 +159,12 @@ aws iam attach-role-policy \
 **Expected:** no output ✅.
 
 ### Step 4: Create an instance profile
+
+| | |
+|---|---|
+| **What is it** | An **instance profile** = the holder that attaches a role to an EC2 server |
+| **What we do** | Create an empty instance profile `ansible-server-role` |
+| **Why** | EC2 can't take a role directly; it takes an instance profile that has the role inside |
 
 An EC2 server can't take a role directly. It takes an **instance profile**: a container that holds the role.
 
@@ -161,6 +183,12 @@ aws iam create-instance-profile --instance-profile-name ansible-server-role
 > 💡 In the AWS console this is done for you when you create a role for EC2. With the CLI we do it ourselves.
 
 ### Step 5: Add the role to the instance profile
+
+| | |
+|---|---|
+| **What is it** | Connecting the role (Steps 1–3) to the holder (Step 4) |
+| **What we do** | Put `ansible-server-role` inside the instance profile |
+| **Why** | Now, when we attach the profile to the Ansible server (Step 7), the server gets the EC2 + Route 53 permissions |
 
 ```bash
 aws iam add-role-to-instance-profile \
@@ -237,6 +265,12 @@ aws ec2 authorize-security-group-ingress \
 
 ### Step 7: Create the Ansible server (EC2)
 
+| | |
+|---|---|
+| **What is it** | The **Ansible server** (control node) = the one machine that runs Ansible and controls all the others |
+| **What we do** | Launch a RHEL 9 `t3.micro` with the instance profile and the `roboshop-common` security group |
+| **Why** | All playbooks run from here. It creates the RoboShop servers (IAM role) and logs into them (SSH rule 2) |
+
 ```bash
 aws ec2 run-instances \
   --image-id ami-0055977a6e828a4f4 \
@@ -257,6 +291,12 @@ aws ec2 run-instances \
 
 ### Step 8: Get the Ansible server's public IP
 
+| | |
+|---|---|
+| **What is it** | The **public IP** = the address we use to reach the server from the internet |
+| **What we do** | Look up the IP of the `ansible-server` instance |
+| **Why** | We need it to SSH from the laptop in the next step |
+
 ```bash
 aws ec2 describe-instances \
   --filters "Name=tag:Name,Values=ansible-server" "Name=instance-state-name,Values=running" \
@@ -275,6 +315,12 @@ aws ec2 describe-instances \
 
 ### Step 9: Log in to the Ansible server
 
+| | |
+|---|---|
+| **What is it** | SSH from the laptop into the Ansible server |
+| **What we do** | `ssh ec2-user@<public-ip>` |
+| **Why** | From here on, everything runs on the Ansible server, not the laptop |
+
 ```bash
 ssh ec2-user@<ansible-server-public-ip>
 ```
@@ -282,6 +328,12 @@ ssh ec2-user@<ansible-server-public-ip>
 Type `yes` the first time, then the SSH password (nothing shows while you type).
 
 ### Step 10: Install Ansible and the collections
+
+| | |
+|---|---|
+| **What is it** | **ansible-core** = Ansible itself. **Collections** = extra module packs (`amazon.aws` for AWS, `community.general`, `community.rabbitmq`) |
+| **What we do** | Install `ansible-core` + `git`, then the 3 collections |
+| **Why** | `roboshop.yaml` needs `amazon.aws` to create servers; the RabbitMQ playbook needs `community.rabbitmq` |
 
 ```bash
 sudo dnf install ansible-core git -y
@@ -294,6 +346,12 @@ ansible-galaxy collection install amazon.aws community.general community.rabbitm
 **What it does:** `ansible-core` has only the built-in modules. The **collections** add the ones we need: `amazon.aws` (EC2, Route 53), `community.general` (npm) and `community.rabbitmq` (RabbitMQ user).
 
 ### Step 11: Install boto3 and check AWS access
+
+| | |
+|---|---|
+| **What is it** | **boto3** = the Python library for AWS. The `amazon.aws` modules use it to talk to AWS |
+| **What we do** | Install `boto3` + `botocore`, then check the IAM role with `aws sts get-caller-identity` |
+| **Why** | Without boto3, `amazon.aws.ec2_instance` fails. The check proves the role from Steps 1–5 works |
 
 ```bash
 sudo pip3.9 install botocore boto3
@@ -309,6 +367,12 @@ aws sts get-caller-identity
 
 ### Step 12: Install sshpass
 
+| | |
+|---|---|
+| **What is it** | **sshpass** = a tool that types the SSH password for a program |
+| **What we do** | Install `sshpass` |
+| **Why** | We log into the RoboShop servers with a **password** (not a key). Ansible needs sshpass for that |
+
 ```bash
 sudo dnf install sshpass -y
 ```
@@ -316,6 +380,12 @@ sudo dnf install sshpass -y
 **What it does:** Ansible logs in to the RoboShop servers with a **password**, and it needs the `sshpass` tool for that. (Already installed? `dnf` just says `Nothing to do`.)
 
 ### Step 13: Clone the repo
+
+| | |
+|---|---|
+| **What is it** | A copy of my GitHub repo on the Ansible server |
+| **What we do** | `git clone` the repo into the home folder |
+| **Why** | We write all the Ansible code inside this folder and push it to GitHub from here |
 
 ```bash
 git clone https://github.com/Abhignadumpala/roboshop-with-ansible-v1.git
@@ -328,6 +398,12 @@ cd roboshop-with-ansible-v1
 **What it does:** gets the repo onto the Ansible server. We write every file here and run every `ansible-playbook` command from inside this folder, so Ansible finds `ansible.cfg` and the inventory.
 
 ### Step 14: Set up git so we can push from the Ansible server
+
+| | |
+|---|---|
+| **What is it** | Git settings: who is committing + remembering the GitHub login |
+| **What we do** | `git config` name/email + credential cache; use a GitHub token as the password |
+| **Why** | So commits show my name and I don't type the token on every push |
 
 ```bash
 git config --global user.name "<your-github-username>"
@@ -346,6 +422,12 @@ git config --global credential.helper 'cache --timeout=36000'
 > 💡 When `git push` asks for a password, GitHub needs a **personal access token**, not your GitHub password. Create one in **GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token**, tick **`repo`**, and paste the token as the password.
 
 ### Step 15: Create the log folder
+
+| | |
+|---|---|
+| **What is it** | A folder in the home directory for Ansible's log file |
+| **What we do** | `mkdir -p ~/roboshop-logs` |
+| **Why** | `ansible.cfg` writes logs here. It's outside the repo, so logs are never pushed |
 
 ```bash
 mkdir -p ~/roboshop-logs
@@ -738,6 +820,12 @@ ansible-inventory --host cart.abhignadevops.store
 
 ### Step 21: Push the setup files
 
+| | |
+|---|---|
+| **What is it** | Saving the setup files to GitHub |
+| **What we do** | `git add` / `commit` / `push` `ansible.cfg`, `inventory.ini`, `group_vars/` |
+| **Why** | Backup + history of every change. `~/.vault_pass` stays behind because it's outside the repo |
+
 📍 **Where:** Ansible server, inside the repo folder `~/roboshop-with-ansible-v1`.
 
 ```bash
@@ -783,6 +871,12 @@ First we create the **4 database servers at once**, then configure them one by o
 
 ### Step 22: Write roboshop.yaml: create the 4 database servers
 
+| | |
+|---|---|
+| **What is it** | `roboshop.yaml` = the playbook that **builds the infrastructure**: EC2 servers (and later DNS records). It runs on the Ansible server itself (`hosts: local`) and talks to AWS |
+| **What we write inside** | A play with variables (server list, AMI, domain) + one task: `amazon.aws.ec2_instance` in a loop |
+| **Why** | Instead of creating 10 servers by hand in the console, one command creates them all, the same way every time |
+
 We start `roboshop.yaml` small: only the task that **creates the EC2 servers**, with the **4 databases** as the default list.
 
 ```bash
@@ -822,6 +916,12 @@ vim roboshop.yaml
 
 ### Step 23: Create the 4 database servers
 
+| | |
+|---|---|
+| **What is it** | Running `roboshop.yaml` for the first time |
+| **What we do** | `ansible-playbook roboshop.yaml`, then run it a second time |
+| **Why** | Creates mongodb, redis, mysql, rabbitmq. The 2nd run shows **idempotency**: nothing new is created |
+
 ```bash
 ansible-playbook roboshop.yaml
 ```
@@ -835,6 +935,12 @@ ansible-playbook roboshop.yaml
 **Expected:** this time `ok` 4 times, **no new servers**: `ec2_instance` finds them by their Name tag (**idempotent**) ✅.
 
 ### Step 24: Add the Route 53 records (and delete tasks) to roboshop.yaml
+
+| | |
+|---|---|
+| **What is it** | Extending `roboshop.yaml` with DNS and clean-up |
+| **What we write inside** | `register: ec2_output` (saves each server's IP), a `route53` task (creates `<name>.abhignadevops.store`), and delete tasks for `action=delete` |
+| **Why** | Our inventory uses DNS names, so every server needs a record. The delete tasks let us clean up with one command |
 
 The inventory uses names like `mongodb.abhignadevops.store`, so every server needs a **DNS record**. We add `register: ec2_output` to the create task (it saves each server's details, including its IP) and the record tasks after it. We also add the delete tasks now, so the same file can clean up.
 
@@ -933,6 +1039,12 @@ vim roboshop.yaml
 
 ### Step 25: Run it again: the records are created
 
+| | |
+|---|---|
+| **What is it** | Running the updated `roboshop.yaml` |
+| **What we do** | Run it, then check with `nslookup` and `ansible ... -m ping` |
+| **Why** | Proves each DNS name points to its server and Ansible can SSH in |
+
 ```bash
 ansible-playbook roboshop.yaml
 ```
@@ -953,6 +1065,12 @@ ansible mongodb,redis,mysql,rabbitmq -m ping
 
 ### Step 26: Push roboshop.yaml
 
+| | |
+|---|---|
+| **What is it** | Saving `roboshop.yaml` to GitHub |
+| **What we do** | `git add` / `commit` / `push` |
+| **Why** | The infrastructure code is now in git |
+
 ```bash
 git add roboshop.yaml
 ```
@@ -972,6 +1090,11 @@ git push
 **MongoDB** is the NoSQL database for products and users.
 
 #### 1a. Write the code
+
+| File | What we write inside | Why |
+|---|---|---|
+| `mongo.repo` | A **repo file**: where dnf downloads MongoDB 7.0 from | RHEL doesn't ship MongoDB; this tells dnf where to get it |
+| `01-mongodb.yaml` | Playbook: copy the repo → install MongoDB → start it → allow remote connections (`0.0.0.0`) → restart | catalogue and user connect to MongoDB over the network |
 
 ```bash
 vim mongo.repo
@@ -1082,6 +1205,10 @@ git push
 
 #### 2a. Write the code
 
+| File | What we write inside | Why |
+|---|---|---|
+| `02-redis.yaml` | Playbook: enable Redis 7 → install → allow remote connections → disable protected mode → start | user and cart store data in Redis over the network |
+
 ```bash
 vim 02-redis.yaml
 ```
@@ -1172,6 +1299,10 @@ git push
 
 #### 3a. Write the code
 
+| File | What we write inside | Why |
+|---|---|---|
+| `03-mysql.yaml` | Playbook: enable MySQL 8.4 → install → start → set the root password (`{{ mysql_root_password }}`) | shipping stores city data in MySQL |
+
 ```bash
 vim 03-mysql.yaml
 ```
@@ -1259,6 +1390,11 @@ git push
 **RabbitMQ** is the message queue: payment drops orders in it.
 
 #### 4a. Write the code
+
+| File | What we write inside | Why |
+|---|---|---|
+| `rabbitmq.repo` | A **repo file**: where dnf downloads RabbitMQ and Erlang from | RHEL doesn't ship RabbitMQ |
+| `04-rabbitmq.yaml` | Playbook: copy the repo → install → start → create the `roboshop` user | payment sends messages to RabbitMQ with that user |
 
 ```bash
 vim rabbitmq.repo
@@ -1421,6 +1557,11 @@ git push
 **catalogue** is the Node.js service for the product list. It reads from MongoDB. It also needs `mongo.repo` (already written for MongoDB) to install the MongoDB client.
 
 #### 5a. Write the code
+
+| File | What we write inside | Why |
+|---|---|---|
+| `catalogue.service.j2` | A **template** of the systemd service file, with `{{ mongodb_host }}` | systemd runs the app as a service; the template fills in where MongoDB is |
+| `05-catalogue.yaml` | Playbook: install Node.js → create user `roboshop` → download + unzip the app → `npm install` → copy the service → load products into MongoDB (only if empty) → start | catalogue serves the product list |
 
 ```bash
 vim catalogue.service.j2
@@ -1606,6 +1747,11 @@ git push
 
 #### 6a. Write the code
 
+| File | What we write inside | Why |
+|---|---|---|
+| `user.service.j2` | A **template** of the systemd service file, with `{{ mongodb_host }}` and `{{ redis_host }}` | Tells user where MongoDB and Redis are |
+| `06-user.yaml` | Playbook: install Node.js → create `roboshop` → download + unzip → `npm install` → copy the service → start | user handles sign-up and login |
+
 ```bash
 vim user.service.j2
 ```
@@ -1762,6 +1908,11 @@ git push
 **cart** is the Node.js service for the shopping cart. It uses Redis and asks catalogue for product details.
 
 #### 7a. Write the code
+
+| File | What we write inside | Why |
+|---|---|---|
+| `cart.service.j2` | A **template** of the systemd service file, with `{{ redis_host }}` and `{{ catalogue_host }}` | Tells cart where Redis and catalogue are |
+| `07-cart.yaml` | Playbook: same Node.js steps, downloads `cart-{{ app_version }}.zip` (v4 from `group_vars/cart.yaml`) | cart keeps each user's cart |
 
 ```bash
 vim cart.service.j2
@@ -1920,6 +2071,11 @@ git push
 **shipping** is the Java service that works out the shipping cost. It reads cities from MySQL.
 
 #### 8a. Write the code
+
+| File | What we write inside | Why |
+|---|---|---|
+| `shipping.service.j2` | A **template** of the systemd service file, with `{{ cart_host }}`, `{{ mysql_host }}` and the DB login | Tells shipping where cart and MySQL are |
+| `08-shipping.yaml` | Playbook: install Maven + Java → download + build the jar → load city data into MySQL (only if empty) → create the app user → start | shipping calculates delivery cost from the city data |
 
 ```bash
 vim shipping.service.j2
@@ -2143,6 +2299,11 @@ git push
 
 #### 9a. Write the code
 
+| File | What we write inside | Why |
+|---|---|---|
+| `payment.service.j2` | A **template** of the systemd service file, with `{{ cart_host }}`, `{{ user_host }}`, `{{ rabbitmq_host }}` + the RabbitMQ login | Tells payment where cart, user and RabbitMQ are |
+| `09-payment.yaml` | Playbook: install Python → create `roboshop` → download + unzip → install dependencies in a virtualenv → copy the service → start | payment processes orders and sends them to RabbitMQ |
+
 ```bash
 vim payment.service.j2
 ```
@@ -2304,6 +2465,11 @@ git push
 **frontend** is the nginx web server users open in the browser.
 
 #### 10a. Write the code
+
+| File | What we write inside | Why |
+|---|---|---|
+| `roboshop.conf.j2` | A **template** of the nginx config: `/api/catalogue/` → `{{ catalogue_host }}`, etc. | nginx forwards each API request to the right backend server |
+| `10-frontend.yaml` | Playbook: enable nginx 1.26 → install → clear the default site → download + unzip the frontend → copy the config → restart | frontend serves the website and is the only server users open |
 
 ```bash
 vim roboshop.conf.j2
@@ -2507,6 +2673,12 @@ git push
 
 ### Step 27: Open the website
 
+| | |
+|---|---|
+| **What is it** | The final test |
+| **What we do** | Open `http://frontend.abhignadevops.store` in the browser |
+| **Why** | If products, login, cart, shipping and payment work, all 10 servers talk to each other correctly |
+
 Open `http://abhignadevops.store` in the browser.
 
 **Expected:** the RoboShop home page with products. Register, log in, add an item to the cart and check out ✅.
@@ -2523,6 +2695,12 @@ Open `http://abhignadevops.store` in the browser.
 
 ### Step 28: Delete the RoboShop servers and records (Ansible server)
 
+| | |
+|---|---|
+| **What is it** | Clean-up with the same playbook |
+| **What we do** | `ansible-playbook roboshop.yaml -e "action=delete instances=[...]"` |
+| **Why** | Stops AWS charges. The DNS records are removed too |
+
 ```bash
 ansible-playbook roboshop.yaml -e "action=delete instances=['mongodb','redis','mysql','rabbitmq','catalogue','user','cart','shipping','payment','frontend']"
 ```
@@ -2534,6 +2712,12 @@ ansible-playbook roboshop.yaml -e "action=delete instances=['mongodb','redis','m
 > ⚠️ Deleting one server (`-e "action=delete instances=['mongodb']"`) also deletes the `abhignadevops.store` record. Run `-e "instances=['frontend']"` again to bring it back.
 
 ### Step 29: Delete the Ansible server (laptop)
+
+| | |
+|---|---|
+| **What is it** | The last clean-up step, from the laptop |
+| **What we do** | Terminate the `ansible-server` instance |
+| **Why** | It was created from the laptop, and it can't delete itself cleanly |
 
 ```bash
 exit
