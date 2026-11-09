@@ -176,11 +176,24 @@ aws iam add-role-to-instance-profile \
 
 In my case, I already created the `roboshop-common` security group in my previous RoboShop lab, so I'm **reusing the same one** and only **adding an inbound rule** to it.
 
-**If you're doing this lab for the first time**, or you don't have `roboshop-common` yet, first create the security group (6a), then add the inbound rule (6b). If you already have it, skip to 6b.
+**If you're doing this lab for the first time**, or you don't have `roboshop-common` yet, first create the security group (6a), then add rule 2 (6b). If you already have it, skip to 6b.
 
-**Why do we need this rule?** `roboshop-common` allows SSH only from your home IP. The Ansible server runs inside AWS with a different IP, so without this rule it can't SSH to the RoboShop servers (the connection times out).
+> 💡 We create **only ONE security group** (`roboshop-common`) and give it **2 inbound rules**. The Ansible server and all 10 RoboShop servers use this same group.
 
-#### 6a: Create the security group (first time only)
+| Rule | Port | Source | Who can SSH in |
+|---|---|---|---|
+| 1 (6a) | 22 | Your laptop IP (`x.x.x.x/32`) | **You**, from your laptop |
+| 2 (6b) | 22 | `roboshop-common` (the group itself) | **The Ansible server**, because it's in the same group |
+
+```
+ Laptop ──rule 1──►┌─────────── roboshop-common (one SG) ───────────┐
+                   │  ansible-server ──rule 2──► mongodb, redis, …   │
+                   └─────────────────────────────────────────────────┘
+```
+
+**Why do we need rule 2?** Rule 1 allows SSH only from your home IP. The Ansible server runs inside AWS with a different IP, so without this rule it can't SSH to the RoboShop servers (the connection times out).
+
+#### 6a: Create the security group + rule 1 (first time only)
 
 ```bash
 aws ec2 create-security-group \
@@ -200,7 +213,7 @@ aws ec2 authorize-security-group-ingress \
 
 **What it does:** allows SSH (port 22) from **your laptop's public IP only**, so you can log in to the servers.
 
-#### 6b: Add the inbound rule for the Ansible server
+#### 6b: Add rule 2 to the same group (for the Ansible server)
 
 ```bash
 aws ec2 authorize-security-group-ingress \
