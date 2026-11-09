@@ -373,6 +373,18 @@ These files are used by every playbook. We write them once and push them.
  └── *.repo, *.j2         ← files the playbooks copy to the servers
 ```
 
+**What each file/folder is for:**
+
+| File / folder | What we add in it | Why we need it | Step |
+|---|---|---|---|
+| `ansible.cfg` | Ansible **settings**: where the inventory is, the log file, the vault key path | So we don't type these options on every command | 16 |
+| `inventory.ini` | The **list of servers**, one group per server, by DNS name | Ansible must know **which servers** to connect to | 17 |
+| `group_vars/` | **Variables**: the SSH login, server DNS names, database logins | So playbooks reuse values instead of hardcoding them | 18–20 |
+| `roboshop.yaml` | The playbook that **creates/deletes** the EC2 servers + DNS records | Builds the servers before we configure them | Part 4 |
+| `01-mongodb.yaml` … `10-frontend.yaml` | One playbook **per server**: install + configure it | Sets up each RoboShop component | Part 4 |
+| `*.repo` | Package repo files (`mongo.repo`, `rabbitmq.repo`) | Tell `dnf` where to download MongoDB/RabbitMQ from | Part 4 |
+| `*.j2` | **Templates** with variables (`catalogue.service.j2`, `roboshop.conf.j2`, …) | Ansible fills in `{{ mongodb_host }}` etc. and copies the result to the server | Part 4 |
+
 **Where do we run these commands?** Everything in Part 3 runs on the **Ansible server** (logged in with `ssh` from Step 9). Most commands run inside the **repo folder**; two things live in the **home folder**, outside the repo, so git never pushes them:
 
 ```
@@ -395,6 +407,12 @@ cd ~/roboshop-with-ansible-v1
 
 ### Step 16: Create ansible.cfg
 
+**Definition:** `ansible.cfg` is Ansible's **settings file**. When we run `ansible` or `ansible-playbook` from the repo folder, Ansible reads it automatically.
+
+**Why we need it:** without it, every command would need extra options like `-i inventory.ini --vault-password-file ~/.vault_pass`, and the first SSH to each new server would stop at a `yes/no` question. We write these settings once here.
+
+**What we add in it:** 4 settings under `[defaults]`: the inventory, host key checking, the log file and the vault key.
+
 📍 **Where:** Ansible server, inside the repo folder `~/roboshop-with-ansible-v1`.
 
 ```bash
@@ -409,12 +427,13 @@ log_path=/home/ec2-user/roboshop-logs/ansible.log
 vault_password_file=/home/ec2-user/.vault_pass
 ```
 
-| Line | Why |
-|---|---|
-| `inventory=inventory.ini` | No need to type `-i inventory.ini` on every command |
-| `host_key_checking=False` | Skips the `yes/no` host key question on the first SSH. Without it, password login to new servers fails |
-| `log_path=...` | Saves the output of every run to a log file |
-| `vault_password_file=...` | The key that unlocks Vault values (Step 19), so we don't type it on every run |
+| Line | What it does | Without it |
+|---|---|---|
+| `[defaults]` | The section for general settings | Ansible ignores the lines below |
+| `inventory=inventory.ini` | Uses our server list automatically | We must type `-i inventory.ini` on every command |
+| `host_key_checking=False` | Skips the `yes/no` host key question on the first SSH | Password login to brand-new servers fails |
+| `log_path=/home/ec2-user/roboshop-logs/ansible.log` | Saves the output of every run to a log file (outside the repo) | No history of runs to check later |
+| `vault_password_file=/home/ec2-user/.vault_pass` | Where the **vault key** is (Step 19). Only the path, not a password | We must type the vault password on every run |
 
 ```bash
 ansible --version
@@ -423,6 +442,12 @@ ansible --version
 **Expected:** `config file = /home/ec2-user/roboshop-with-ansible-v1/ansible.cfg` ✅.
 
 ### Step 17: Create inventory.ini
+
+**Definition:** the **inventory** is the list of servers Ansible manages, put into **groups** (`[name]`).
+
+**Why we need it:** a playbook says `hosts: mongodb`. Ansible looks up the `[mongodb]` group here to find **which server** to connect to.
+
+**What we add in it:** 11 groups: `[local]` (the Ansible server itself) + one group for each of the 10 RoboShop servers, by **DNS name**.
 
 📍 **Where:** Ansible server, inside the repo folder `~/roboshop-with-ansible-v1`.
 
@@ -465,7 +490,12 @@ payment.abhignadevops.store
 frontend.abhignadevops.store
 ```
 
-**What it does:** one group per server, listed by its **DNS name** (created by `roboshop.yaml`), so the inventory never changes when IPs change. `[local]` is the Ansible server itself, used by `roboshop.yaml`.
+| Group | Server | Used by |
+|---|---|---|
+| `[local]` → `localhost` | The Ansible server itself | `roboshop.yaml`: it talks to AWS from here to create servers |
+| `[mongodb]` … `[frontend]` → `<name>.abhignadevops.store` | Each RoboShop server | `01-mongodb.yaml` … `10-frontend.yaml` |
+
+**Why DNS names, not IPs?** IPs change every time a server is recreated. `roboshop.yaml` points the DNS name at the new IP, so this file never changes.
 
 ```bash
 ansible-inventory --graph
@@ -655,6 +685,18 @@ ansible mongodb -m debug -a "var=ansible_password"
 > ⚠️ Lose `~/.vault_pass` (or delete the Ansible server) and the value can't be decrypted. Just repeat this step with a new vault password.
 
 ### Step 20: Create the group-specific variable files
+
+**Definition:** a **group file** `group_vars/<group>.yaml` holds variables for **only one inventory group**. The file name must match the group name in `inventory.ini`.
+
+**Why we need it:** some values belong to just one server (like cart's app version). If the same variable is in `all.yaml` too, the **group file wins** for that server.
+
+**What we add:**
+
+| File | Variable | For |
+|---|---|---|
+| `cart.yaml` | `app_version: v4` | Which cart version to download |
+| `mongodb.yaml` | `app_name: mongodb` | A test value to show group files work |
+| `mysql.yaml` | `mysql_root_password: RoboShop@1` | MySQL root password (overrides `all.yaml` for mysql) |
 
 📍 **Where:** Ansible server, inside the repo folder `~/roboshop-with-ansible-v1`.
 
