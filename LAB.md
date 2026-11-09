@@ -475,6 +475,21 @@ ansible-inventory --graph
 
 ### Step 18: Create group_vars/all.yaml
 
+**Definition:** `group_vars/` is a folder of **variables** (values the playbooks reuse). Ansible loads it automatically, so we never hardcode logins or server names inside the playbooks.
+
+| File in `group_vars/` | Applies to | What we put in it |
+|---|---|---|
+| `all.yaml` (this step) | **All** servers | The SSH login, every server's DNS name, the database logins |
+| `cart.yaml`, `mongodb.yaml`, `mysql.yaml` (Step 20) | Only that server's group | Values just for that server (they win over `all.yaml`) |
+
+```
+ group_vars/
+ ├── all.yaml       ← every server reads this
+ ├── cart.yaml      ← only cart
+ ├── mongodb.yaml   ← only mongodb
+ └── mysql.yaml     ← only mysql
+```
+
 📍 **Where:** Ansible server, inside the repo folder `~/roboshop-with-ansible-v1`.
 
 ```bash
@@ -504,12 +519,30 @@ rabbitmq_user: roboshop
 rabbitmq_password: roboshop123
 ```
 
-| Variables | Used for |
-|---|---|
-| `ansible_user`, `ansible_password` | The SSH login Ansible uses on every RoboShop server |
-| `mongodb_host` … `payment_host` | The DNS name of each server; templates use them, e.g. `MONGO_URL=mongodb://{{ mongodb_host }}:27017` |
-| `mysql_root_password`, `shipping_db_*` | MySQL logins for the MySQL and shipping playbooks |
-| `rabbitmq_user`, `rabbitmq_password` | The RabbitMQ login payment uses |
+**What's inside `all.yaml`: 3 kinds of values**
+
+**1. The SSH login: Ansible uses it to log into the servers**
+
+| Variable | Value | Used for |
+|---|---|---|
+| `ansible_user` | `ec2-user` | The username Ansible logs in with on all 10 servers |
+| `ansible_password` | `<ssh-password>` | The password for that login (encrypted with Vault in Step 19) |
+
+**2. The server addresses: where each server is**
+
+| Variable | Value | Used for |
+|---|---|---|
+| `mongodb_host` … `payment_host` | `<name>.abhignadevops.store` | The DNS name of each server. Config templates use them, e.g. `MONGO_URL=mongodb://{{ mongodb_host }}:27017`, so catalogue knows where mongodb is |
+
+**3. The app logins: usernames and passwords inside the databases**
+
+| Variable | Value | Used for |
+|---|---|---|
+| `mysql_root_password` | `RoboShop@1` | MySQL root (admin) password, set by the mysql playbook |
+| `shipping_db_user`, `shipping_db_password` | `shipping` / `RoboShop@1` | The login the shipping service uses to connect to MySQL |
+| `rabbitmq_user`, `rabbitmq_password` | `roboshop` / `roboshop123` | The login the payment service uses to connect to RabbitMQ |
+
+> 💡 Group 1 logs Ansible **into the servers**. Group 3 logs the apps **into the databases**. They're different logins.
 
 `<ssh-password>` is only a placeholder. The repo is public, so in the next step we replace it with the **encrypted** password.
 
