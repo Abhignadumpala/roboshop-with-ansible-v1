@@ -502,6 +502,21 @@ rabbitmq_password: roboshop123
                        ~/.vault_pass (only on the Ansible server, never pushed) unlocks it at run time
 ```
 
+**In short:** we use Vault to encrypt passwords. I created a **vault password** (the key), which stays only on the Ansible server. With it I encrypted the **SSH password** I use to log into all the RoboShop servers, and put the encrypted value in `group_vars/all.yaml`, which goes to GitHub.
+
+| Password | What it's for | Where it is | Pushed? |
+|---|---|---|---|
+| Vault password (`<vault-password>`) | 🔑 The key that encrypts and decrypts | `~/.vault_pass` on the Ansible server | ❌ Never |
+| SSH password (`<ssh-password>`) | Ansible logs into all 10 servers with it (`ec2-user`) | Encrypted in `group_vars/all.yaml` | ✅ Encrypted only |
+
+`ansible.cfg` holds only the **path** to the key (`vault_password_file=...`), not a password.
+
+```
+ Playbook runs ─► ansible.cfg: "key is in ~/.vault_pass"
+               ─► all.yaml: encrypted ansible_password
+               ─► decrypt in memory ─► SSH into servers as ec2-user ✅
+```
+
 **1. Create the vault password file (outside the repo):**
 
 📍 **Where:** Ansible server, **home folder**. The `~/` in the command puts the file in `/home/ec2-user/`, wherever you are. It's a hidden file (starts with `.`), so `ls` doesn't show it; use `ls -la ~`.
