@@ -12,7 +12,7 @@
 - [Step 3: Attach the Route 53 policy to the role](#step-3-attach-the-route-53-policy-to-the-role)
 - [Step 4: Create an instance profile](#step-4-create-an-instance-profile)
 - [Step 5: Add the role to the instance profile](#step-5-add-the-role-to-the-instance-profile)
-- [Step 6: Add an SSH rule to the roboshop-common security group](#step-6-add-an-ssh-rule-to-the-roboshop-common-security-group)
+- [Step 6: Set up the roboshop-common security group (1 SG, 2 rules)](#step-6-set-up-the-roboshop-common-security-group-1-sg-2-rules)
 - [Step 7: Create the Ansible server (EC2)](#step-7-create-the-ansible-server-ec2)
 - [Step 8: Get the Ansible server's public IP](#step-8-get-the-ansible-servers-public-ip)
 
@@ -101,7 +101,7 @@
 **Order:** first the IAM role (Steps 1–5), then the security group rule (Step 6), then the Ansible server (Step 7). The server gets the role and the rule the moment it is created.
 
 ```
- Step 1 role ─► Steps 2–3 policies ─► Steps 4–5 instance profile ─► Step 6 SSH rule ─► Step 7 Ansible server
+ Step 1 role ─► Steps 2–3 policies ─► Steps 4–5 instance profile ─► Step 6 security group ─► Step 7 Ansible server
 ```
 
 ### Step 1: Create the IAM role
@@ -172,26 +172,34 @@ aws iam add-role-to-instance-profile \
 
 **Expected:** no output ✅.
 
-### Step 6: Add an SSH rule to the roboshop-common security group
+### Step 6: Set up the roboshop-common security group (1 SG, 2 rules)
 
-In my case, I already created the `roboshop-common` security group in my previous RoboShop lab, so I'm **reusing the same one** and only **adding an inbound rule** to it.
+**Definition:** a **security group (SG)** is a firewall for EC2 servers. **Inbound rules** decide who can connect in.
 
-**If you're doing this lab for the first time**, or you don't have `roboshop-common` yet, first create the security group (6a), then add rule 2 (6b). If you already have it, skip to 6b.
-
-> 💡 We create **only ONE security group** (`roboshop-common`) and give it **2 inbound rules**. The Ansible server and all 10 RoboShop servers use this same group.
+We use **only ONE security group**, `roboshop-common`. We don't create a separate SG for the Ansible server. The Ansible server and all 10 RoboShop servers use this same group, and it needs **2 inbound rules**:
 
 | Rule | Port | Source | Who can SSH in |
 |---|---|---|---|
-| 1 (6a) | 22 | Your laptop IP (`x.x.x.x/32`) | **You**, from your laptop |
-| 2 (6b) | 22 | `roboshop-common` (the group itself) | **The Ansible server**, because it's in the same group |
+| Rule 1 | 22 | Your laptop IP (`x.x.x.x/32`) | **You**, from your laptop |
+| Rule 2 | 22 | `roboshop-common` (the same group) | **The Ansible server**, because it's in the same group |
 
 ```
- Laptop ──rule 1──►┌─────────── roboshop-common (one SG) ───────────┐
-                   │  ansible-server ──rule 2──► mongodb, redis, …   │
-                   └─────────────────────────────────────────────────┘
+                   ┌──────────── roboshop-common (ONE security group) ────────────┐
+ Laptop ──rule 1──►│                                                              │
+                   │   ansible-server ──rule 2──► mongodb, redis, mysql, … (10)   │
+                   └──────────────────────────────────────────────────────────────┘
 ```
 
-**Why do we need rule 2?** Rule 1 allows SSH only from your home IP. The Ansible server runs inside AWS with a different IP, so without this rule it can't SSH to the RoboShop servers (the connection times out).
+**Why rule 2?** Rule 1 allows only your home IP. The Ansible server runs inside AWS with its own IP, so without rule 2 its SSH to the RoboShop servers times out. Rule 2 says: *"any server in this group can SSH to any other server in this group."*
+
+**Which part should you do?**
+
+| Your situation | Do |
+|---|---|
+| First time, no `roboshop-common` yet | **6a** (create the SG + rule 1), then **6b** (rule 2) |
+| You already have `roboshop-common` from a previous lab | Only **6b** (rule 2) |
+
+In my case, I already created `roboshop-common` with rule 1 in my previous RoboShop lab, so I'm reusing it and **only adding rule 2 (6b)**.
 
 #### 6a: Create the security group + rule 1 (first time only)
 
@@ -239,7 +247,7 @@ aws ec2 run-instances \
   --query 'Instances[0].InstanceId' --output text
 ```
 
-**What it does:** creates the RHEL 9 Ansible server with the instance profile (Step 5) and the security group (Step 6).
+**What it does:** creates the RHEL 9 Ansible server with the instance profile (Step 5) and the security group `roboshop-common` (Step 6). Because the server is in this group, rule 2 lets it SSH to the RoboShop servers.
 
 **Expected:** an instance ID like `i-0abc123def4567890` ✅.
 
