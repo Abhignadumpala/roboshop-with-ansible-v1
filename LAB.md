@@ -602,6 +602,32 @@ ansible-inventory --graph
  └── mysql.yaml     ← only mysql
 ```
 
+**How Ansible loads the variables (order):**
+
+1. **`all.yaml` first.** Every server gets all the variables in `all.yaml`. Common values go here.
+2. **Then the server's own file.** If a variable belongs to only one server, we can keep it in a separate file named after its inventory group (`mongodb.yaml`, `mysql.yaml`, `cart.yaml`). For the mongodb server, Ansible loads `all.yaml` first, then `mongodb.yaml`.
+3. **The specific file wins.** If the same variable is in both files, the value from the server's own file is used.
+
+```
+ Playbook runs on the mysql server (hosts: mysql)
+
+ 1. load group_vars/all.yaml     → mysql_root_password: RoboShop@1, mongodb_host, …
+ 2. load group_vars/mysql.yaml   → mysql_root_password: RoboShop@1   (same name → overrides all.yaml)
+                                   ▼
+    final value used = the one from mysql.yaml ✅
+```
+
+| Server | Files Ansible loads | Result |
+|---|---|---|
+| mongodb | `all.yaml` → `mongodb.yaml` | All common variables + `app_name` |
+| mysql | `all.yaml` → `mysql.yaml` | `mysql_root_password` comes from `mysql.yaml` |
+| cart | `all.yaml` → `cart.yaml` | All common variables + `app_version: v4` |
+| redis (no own file) | `all.yaml` only | Only the common variables |
+
+> 💡 **Rule:** the file name must match the group name in `inventory.ini` (`[mongodb]` → `mongodb.yaml`). Otherwise Ansible never loads it.
+
+**Interview one-liner:** *"`group_vars/all.yaml` holds variables for every host. `group_vars/<group>.yaml` holds variables for one group and overrides `all` when the same variable is in both."*
+
 📍 **Where:** Ansible server, inside the repo folder `~/roboshop-with-ansible-v1`.
 
 ```bash
