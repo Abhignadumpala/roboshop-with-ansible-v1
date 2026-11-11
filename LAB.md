@@ -1653,6 +1653,57 @@ After copying the file, the playbook runs **`daemon reload`** (so systemd reads 
 
 **Interview one-liner:** *"A systemd service file runs an app as a managed background service: it auto-restarts on failure, starts on boot and logs to journald. We template it with Jinja2 so environment values like the DB host come from Ansible variables."*
 
+**What is a Jinja2 template?**
+
+**Definition:** **Jinja2** is the templating engine Ansible uses. A **template** (`.j2` file) is a config file with **blanks** (`{{ variable }}`). Ansible fills the blanks with variable values and copies the final file to the server.
+
+```
+ catalogue.service.j2 (Ansible server)              catalogue.service (catalogue server)
+ MONGO_URL="mongodb://{{ mongodb_host }}:27017"  ──►  MONGO_URL="mongodb://mongodb.abhignadevops.store:27017"
+                          ▲
+             value from group_vars/all.yaml
+```
+
+**Why we use it:** so we don't hardcode values. If an address changes, we update **one variable** in `group_vars/all.yaml` instead of every file.
+
+| | Shell scripting | Ansible + Jinja2 |
+|---|---|---|
+| Service file | Values **hardcoded** in the file | `{{ placeholders }}` in a `.j2` file |
+| Copy | `cp file /etc/systemd/system/` | `template:` module (fills in values, then copies) |
+| Where values live | Inside each file | One place: `group_vars/all.yaml` |
+| Change the domain | Edit all 6 files | Edit 1 line |
+| Passwords | Plain text in files | Can come from **Vault** |
+
+**`copy` vs `template`:**
+
+| Module | What it does | Used for |
+|---|---|---|
+| `copy` | Copies the file **as it is** | `mongo.repo`, `rabbitmq.repo` |
+| `template` | **Fills in `{{ }}`** first, then copies | `*.service.j2`, `roboshop.conf.j2` |
+
+**Templates in RoboShop:**
+
+| Template | Placeholders filled in |
+|---|---|
+| `catalogue.service.j2` | `{{ mongodb_host }}` |
+| `user.service.j2` | `{{ mongodb_host }}`, `{{ redis_host }}` |
+| `cart.service.j2` | `{{ redis_host }}`, `{{ catalogue_host }}` |
+| `shipping.service.j2` | `{{ cart_host }}`, `{{ mysql_host }}`, DB login |
+| `payment.service.j2` | `{{ cart_host }}`, `{{ user_host }}`, `{{ rabbitmq_host }}`, RabbitMQ login |
+| `roboshop.conf.j2` (nginx) | `{{ catalogue_host }}` … `{{ payment_host }}` |
+
+| Jinja2 syntax | Meaning |
+|---|---|
+| `{{ variable }}` | Print a value |
+| `{% if %}` / `{% for %}` | Logic inside a template |
+| `{# comment #}` | Comment in a `.j2` file |
+
+> 💡 The `{{ }}` in playbooks (`roboshop-{{ item }}`, `cart-{{ app_version }}.zip`) is also Jinja2.
+
+**Interview one-liner:** *"Jinja2 is the templating engine Ansible uses. We write config files as `.j2` templates with placeholders like `{{ mongodb_host }}`; the `template` module fills them with values from group_vars or Vault and copies the final file to the server, so nothing is hardcoded and one template works for any environment."*
+
+**Example answer:** *"In RoboShop, `catalogue.service.j2` has `MONGO_URL=mongodb://{{ mongodb_host }}:27017`. Ansible replaces `{{ mongodb_host }}` with `mongodb.abhignadevops.store` from `group_vars/all.yaml`, so if the address changes I update one variable instead of every file."*
+
 ```bash
 vim 05-catalogue.yaml
 ```
