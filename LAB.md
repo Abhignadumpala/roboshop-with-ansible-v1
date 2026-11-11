@@ -1612,6 +1612,47 @@ WantedBy=multi-user.target
 
 `catalogue.service.j2` is the systemd service file. `{{ mongodb_host }}` is replaced with `mongodb.abhignadevops.store` when the playbook copies it.
 
+**Why do we write a service file?**
+
+**Definition:** a **systemd service file** tells Linux **how to run an app as a background service**: which command starts it, as which user, with which settings.
+
+Without it we'd have to start the app by hand with `node /app/server.js`. Then it stops when we log out, doesn't come back after a crash, and doesn't start after a reboot. With a service file, systemd manages it for us:
+
+| Without a service file | With a service file |
+|---|---|
+| Start by hand: `node /app/server.js` | `systemctl start catalogue` |
+| Stops when the SSH session closes | Runs in the background all the time |
+| Crash → stays down | `Restart=on-failure` → systemd restarts it after 5 sec |
+| Reboot → app is gone | `enabled` → starts automatically on boot |
+| Logs go to the terminal | `journalctl -u catalogue` shows the logs |
+
+**Why `.j2` (a template)?** The app needs to know **where MongoDB is**. We don't hardcode the address; the playbook's `template` module replaces `{{ mongodb_host }}` with the value from `group_vars/all.yaml`, then copies the result to `/etc/systemd/system/catalogue.service` on the catalogue server.
+
+```
+ catalogue.service.j2  ──template──►  /etc/systemd/system/catalogue.service
+ MONGO_URL="mongodb://{{ mongodb_host }}:27017/catalogue"
+                                       MONGO_URL="mongodb://mongodb.abhignadevops.store:27017/catalogue"
+```
+
+**Line by line:**
+
+| Line | What it does |
+|---|---|
+| `[Unit]` `Description=Catalogue Service` | The name shown in `systemctl status` |
+| `After=network-online.target` | Start only after the network is up (the app must reach MongoDB) |
+| `[Service]` `User=roboshop` | Run the app as the `roboshop` user, **not root** (safer) |
+| `Environment=MONGO_URL=...` | A variable the app reads to find MongoDB |
+| `ExecStart=/bin/node /app/server.js` | The command that starts the app |
+| `SyslogIdentifier=catalogue` | The name the logs are tagged with |
+| `Restart=on-failure` + `RestartSec=5` | If the app crashes, restart it after 5 seconds |
+| `[Install]` `WantedBy=multi-user.target` | Start it on boot (used by `enabled: yes`) |
+
+After copying the file, the playbook runs **`daemon reload`** (so systemd reads the new file), then **start + enable**.
+
+> 💡 The same pattern is used for user, cart, shipping and payment: only `ExecStart` (node / java / python) and the `Environment=` lines change.
+
+**Interview one-liner:** *"A systemd service file runs an app as a managed background service: it auto-restarts on failure, starts on boot and logs to journald. We template it with Jinja2 so environment values like the DB host come from Ansible variables."*
+
 ```bash
 vim 05-catalogue.yaml
 ```
