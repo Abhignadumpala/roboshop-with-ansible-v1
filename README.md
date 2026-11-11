@@ -78,6 +78,14 @@ RoboShop e-commerce app (10 servers) set up with Ansible playbooks.
 
 ---
 
+## Extra notes
+
+| Topic | Link |
+|---|---|
+| Where the data comes from and where it's stored (master data vs live data, mongosh / mysql loading) | [notes/where-the-data-comes-from.md](notes/where-the-data-comes-from.md) |
+
+---
+
 ## How to run this lab
 
 The full step-by-step guide is in **[LAB.md](LAB.md)**: create the IAM role and the Ansible server, install Ansible, create the 10 servers, run the playbooks in order, open the shop, and clean up.
