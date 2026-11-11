@@ -2775,6 +2775,7 @@ aws ec2 terminate-instances --instance-ids $ID
 | `couldn't resolve module/action 'amazon.aws.ec2_instance'` | Collection not installed | Step 10 |
 | `couldn't resolve module/action 'systemd_service'` | Older Ansible version | Change `systemd_service:` to `systemd:` in the playbook |
 | `InvalidGroup.NotFound` | A `roboshop-<name>` security group is missing | Create it in `us-east-1` |
+| Redis: `Unable to start service redis` after fixing a typo in `line:` | The earlier run with the typo already wrote the bad line into `/etc/redis/redis.conf` (e.g. `proctected-mode no`); the fixed run just adds the good line, so the bad one stays | Check: `ansible redis -b -m shell -a "grep -n tected /etc/redis/redis.conf"`. Remove: `ansible redis -b -m lineinfile -a "path=/etc/redis/redis.conf regexp='^proctected-mode' state=absent"`, then run the playbook again |
 | `UNREACHABLE … timed out` | No SSH rule from the Ansible server | Step 6 |
 | `UNREACHABLE … Permission denied` | Wrong SSH password or vault not decrypting | Step 19 |
 | `to use the 'ssh' connection type with passwords … you must install the sshpass program` | `sshpass` missing | Step 12 |
