@@ -83,6 +83,7 @@ RoboShop e-commerce app (10 servers) set up with Ansible playbooks.
 | Topic | Link |
 |---|---|
 | Where the data comes from and where it's stored (master data vs live data, mongosh / mysql loading) | [notes/where-the-data-comes-from.md](notes/where-the-data-comes-from.md) |
+| Logs vs metrics vs traces (observability), log levels, checking a service with `systemctl` / `journalctl` / `ss` / `curl` | [notes/logs-metrics-observability.md](notes/logs-metrics-observability.md) |
 
 ---
 
