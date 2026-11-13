@@ -1,0 +1,21 @@
+[Unit]
+Description=Payment Service
+After=network-online.target
+
+[Service]
+User=roboshop
+WorkingDirectory=/app
+Environment=CART_HOST={{ cart_host }}
+Environment=CART_PORT=8080
+Environment=USER_HOST={{ user_host }}
+Environment=USER_PORT=8080
+Environment=AMQP_HOST={{ rabbitmq_host }}
+Environment=AMQP_USER={{ rabbitmq_user }}
+Environment=AMQP_PASS={{ rabbitmq_password }}
+ExecStart=/app/.venv/bin/gunicorn --config gunicorn.conf.py --no-control-socket payment:app
+SyslogIdentifier=payment
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
