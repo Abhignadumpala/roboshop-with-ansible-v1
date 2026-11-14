@@ -84,6 +84,7 @@ RoboShop e-commerce app (10 servers) set up with Ansible playbooks.
 |---|---|
 | Where the data comes from and where it's stored (master data vs live data, mongosh / mysql loading) | [notes/where-the-data-comes-from.md](notes/where-the-data-comes-from.md) |
 | Logs vs metrics vs traces (observability), log levels, checking a service with `systemctl` / `journalctl` / `ss` / `curl` | [notes/logs-metrics-observability.md](notes/logs-metrics-observability.md) |
+| DNS records: public vs private IP, the two frontend records, security groups, fixing the website after a stop/start | [notes/dns-records-public-vs-private-ip.md](notes/dns-records-public-vs-private-ip.md) |
 
 ---
 
